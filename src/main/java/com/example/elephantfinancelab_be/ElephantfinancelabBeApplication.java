@@ -6,8 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class ElephantfinancelabBeApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(ElephantfinancelabBeApplication.class, args);
-	}
-
+  public static void main(String[] args) {
+    SpringApplication.run(ElephantfinancelabBeApplication.class, args);
+  }
 }
