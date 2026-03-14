@@ -61,8 +61,14 @@ sourceSets {
 	main.java.srcDirs += [ querydslDir ]
 }
 
-tasks.withType(JavaCompile).configureEach {
+tasks.named('compileJava', JavaCompile) {
 	options.generatedSourceOutputDirectory.set(file(querydslDir))
+}
+
+tasks.named('compileTestJava', JavaCompile) {
+	options.generatedSourceOutputDirectory.set(
+		file("$buildDir/generated/sources/annotationProcessor/java/test")
+	)
 }
 
 clean.doLast {
