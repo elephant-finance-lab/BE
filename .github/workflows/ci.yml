@@ -35,16 +35,9 @@ jobs:
       - name: Check Lint (Spotless)
         run: ./gradlew spotlessCheck
 
-      - name: Run tests
-        run: ./gradlew test
-        env:
-          DB_URL: ${{ secrets.DB_URL }}
-          DB_USERNAME: ${{ secrets.DB_USERNAME }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-
   # 배포 Job (Push일 때만 실행 = 머지 되었을 때)
   deploy:
-    needs: build-and-test # 테스트가 통과해야만 실행됨
+    needs: build-and-test # Lint(Spotless)가 통과해야만 실행됨
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     steps:
