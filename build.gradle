@@ -54,3 +54,23 @@ spotless {
 tasks.named('test') {
 	useJUnitPlatform()
 }
+
+def querydslDir = "src/main/generated"
+
+sourceSets {
+	main.java.srcDirs += [ querydslDir ]
+}
+
+tasks.named('compileJava', JavaCompile) {
+	options.generatedSourceOutputDirectory.set(file(querydslDir))
+}
+
+tasks.named('compileTestJava', JavaCompile) {
+	options.generatedSourceOutputDirectory.set(
+		file("$buildDir/generated/sources/annotationProcessor/java/test")
+	)
+}
+
+clean.doLast {
+	file(querydslDir).deleteDir()
+}
