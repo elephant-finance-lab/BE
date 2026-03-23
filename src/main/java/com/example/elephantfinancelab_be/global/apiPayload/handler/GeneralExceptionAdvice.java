@@ -4,7 +4,9 @@ import com.example.elephantfinancelab_be.global.apiPayload.ApiResponse;
 import com.example.elephantfinancelab_be.global.apiPayload.code.BaseErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.code.GeneralErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.GeneralException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -22,7 +24,8 @@ public class GeneralExceptionAdvice {
 
   @ExceptionHandler(GeneralException.class)
   public ResponseEntity<ApiResponse<Void>> handleGeneralException(GeneralException ex) {
-    log.warn("Business exception [{}]: {}", ex.getCode().getCode(), ex.getCode().getMessage());
+    log.warn("DB constraint violation");
+    log.debug("DB constraint violation detail", ex);
     return ResponseEntity.status(ex.getCode().getStatus())
         .body(ApiResponse.onFailure(ex.getCode(), null));
   }
@@ -37,12 +40,16 @@ public class GeneralExceptionAdvice {
   }
 
   @ExceptionHandler(MethodArgumentNotValidException.class)
-  public ResponseEntity<ApiResponse<Map<String, String>>> handleMethodArgumentNotValid(
+  public ResponseEntity<ApiResponse<Map<String, List<String>>>> handleMethodArgumentNotValid(
       MethodArgumentNotValidException ex) {
-    Map<String, String> errors = new HashMap<>();
+    Map<String, List<String>> errors = new HashMap<>();
     ex.getBindingResult()
         .getFieldErrors()
-        .forEach(err -> errors.put(err.getField(), err.getDefaultMessage()));
+        .forEach(
+            err ->
+                errors
+                    .computeIfAbsent(err.getField(), k -> new ArrayList<>())
+                    .add(err.getDefaultMessage()));
     BaseErrorCode code = GeneralErrorCode.BAD_REQUEST;
     return ResponseEntity.status(code.getStatus()).body(ApiResponse.onFailure(code, errors));
   }
@@ -56,11 +63,10 @@ public class GeneralExceptionAdvice {
   }
 
   @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
-  public ResponseEntity<ApiResponse<String>> handleIllegalArgumentOrState(RuntimeException ex) {
+  public ResponseEntity<ApiResponse<Void>> handleIllegalArgumentOrState(RuntimeException ex) {
     log.warn("{}: {}", ex.getClass().getSimpleName(), ex.getMessage());
     BaseErrorCode code = GeneralErrorCode.BAD_REQUEST;
-    String detail = ex.getMessage() != null && !ex.getMessage().isBlank() ? ex.getMessage() : null;
-    return ResponseEntity.status(code.getStatus()).body(ApiResponse.onFailure(code, detail));
+    return ResponseEntity.status(code.getStatus()).body(ApiResponse.onFailure(code, null));
   }
 
   @ExceptionHandler(AuthenticationException.class)
