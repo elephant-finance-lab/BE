@@ -36,6 +36,11 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+	testRuntimeOnly 'com.h2database:h2'
+
+	// Spring Boot 4.x는 springdoc 2.x와 비호환(WebMvcProperties 등) → 3.x 사용
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.0'
+
 
 }
 
