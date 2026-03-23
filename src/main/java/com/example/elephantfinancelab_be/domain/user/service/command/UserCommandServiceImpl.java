@@ -1,3 +1,3 @@
 package com.example.elephantfinancelab_be.domain.user.service.command;
 
-public class UserCommandServiceImpl {}
+public class UserCommandServiceImpl implements UserCommandService {}

@@ -24,8 +24,8 @@ public class GeneralExceptionAdvice {
 
   @ExceptionHandler(GeneralException.class)
   public ResponseEntity<ApiResponse<Void>> handleGeneralException(GeneralException ex) {
-    log.warn("DB constraint violation");
-    log.debug("DB constraint violation detail", ex);
+    log.warn("Handled GeneralException: {}", ex.getMessage());
+    log.debug("GeneralException detail", ex);
     return ResponseEntity.status(ex.getCode().getStatus())
         .body(ApiResponse.onFailure(ex.getCode(), null));
   }
