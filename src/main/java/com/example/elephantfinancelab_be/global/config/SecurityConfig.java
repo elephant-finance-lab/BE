@@ -3,6 +3,7 @@ package com.example.elephantfinancelab_be.global.config;
 import com.example.elephantfinancelab_be.global.apiPayload.ApiResponse;
 import com.example.elephantfinancelab_be.global.apiPayload.code.BaseErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.code.GeneralErrorCode;
+import com.example.elephantfinancelab_be.global.auth.service.CustomOAuth2UserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -20,6 +21,8 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.web.authentication.AuthenticationFailureHandler;
+import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 
 @Configuration
 @EnableWebSecurity
@@ -28,11 +31,12 @@ public class SecurityConfig {
 
   private final Environment env;
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+  private final CustomOAuth2UserService customOAuth2UserService;
 
   private static final String[] PUBLIC_URLS = {
           "/", "/ui", "/error",
-          "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/swagger-ui/index.html",
-          "/api/auth/**"
+          "/login/**", "/oauth2/**",
+          "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/api/auth/**"
   };
 
   private static void writeApiFailure(HttpServletResponse response, BaseErrorCode errorCode)
@@ -55,46 +59,65 @@ public class SecurityConfig {
             writeApiFailure(response, GeneralErrorCode.FORBIDDEN);
   }
 
+  // TODO: JWT 발급 구현 후 토큰 생성 및 쿠키/헤더 세팅 로직 추가
+  @Bean
+  public AuthenticationSuccessHandler oAuth2LoginSuccessHandler() {
+    return (request, response, authentication) ->
+            response.sendRedirect("/api/auth/me");
+  }
+
+  @Bean
+  public AuthenticationFailureHandler oAuth2LoginFailureHandler() {
+    return (request, response, exception) -> {
+      response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+      response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+      response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+      OBJECT_MAPPER.writeValue(
+              response.getOutputStream(),
+              ApiResponse.onFailure(GeneralErrorCode.UNAUTHORIZED, null)
+      );
+    };
+  }
+
   @Bean
   public SecurityFilterChain securityFilterChain(
           HttpSecurity http,
           AuthenticationEntryPoint jsonAuthenticationEntryPoint,
-          AccessDeniedHandler jsonAccessDeniedHandler)
-          throws Exception {
+          AccessDeniedHandler jsonAccessDeniedHandler) throws Exception {
 
     http.csrf(AbstractHttpConfigurer::disable)
             .httpBasic(AbstractHttpConfigurer::disable)
             .formLogin(AbstractHttpConfigurer::disable)
-            .sessionManagement(
-                    session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .exceptionHandling(
-                    ex ->
-                            ex.authenticationEntryPoint(jsonAuthenticationEntryPoint)
-                                    .accessDeniedHandler(jsonAccessDeniedHandler));
+            // TODO: JWT 발급 구현 후 STATELESS로 변경
+            .sessionManagement(session ->
+                    session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+            .exceptionHandling(ex ->
+                    ex.authenticationEntryPoint(jsonAuthenticationEntryPoint)
+                            .accessDeniedHandler(jsonAccessDeniedHandler));
 
-    http.authorizeHttpRequests(
-            auth ->
-                    auth.requestMatchers(PUBLIC_URLS).permitAll()
-                            .anyRequest().authenticated());
+    http.authorizeHttpRequests(auth ->
+            auth.requestMatchers(PUBLIC_URLS).permitAll()
+                    .anyRequest().authenticated());
 
-    // 구글, 네이버, 카카오 클라이언트 ID 존재 여부 확인
-    String googleClientId = env.getProperty("spring.security.oauth2.client.registration.google.client-id");
-    String naverClientId = env.getProperty("spring.security.oauth2.client.registration.naver.client-id");
-    String kakaoClientId = env.getProperty("spring.security.oauth2.client.registration.kakao.client-id");
+    String googleClientId = env.getProperty("spring.security.oauth2.client.registration.google.client-id", "");
+    String naverClientId  = env.getProperty("spring.security.oauth2.client.registration.naver.client-id", "");
+    String kakaoClientId  = env.getProperty("spring.security.oauth2.client.registration.kakao.client-id", "");
 
-    // 소셜 로그인 설정: 설정파일(.env 등)에 클라이언트 ID가 하나라도 있으면 OAuth2 로그인 활성화
-    if ((googleClientId != null && !googleClientId.isBlank()) ||
-            (naverClientId != null && !naverClientId.isBlank()) ||
-            (kakaoClientId != null && !kakaoClientId.isBlank())) {
+    boolean oauthEnabled = (googleClientId != null && !googleClientId.isBlank())
+            || (naverClientId != null && !naverClientId.isBlank())
+            || (kakaoClientId != null && !kakaoClientId.isBlank());
 
+    if (oauthEnabled) {
       http.oauth2Login(oauth2 -> oauth2
-              .defaultSuccessUrl("/main") // 로그인 성공 시 이동할 기본 페이지
+              .userInfoEndpoint(userInfo ->
+                      userInfo.userService(customOAuth2UserService))
+              .successHandler(oAuth2LoginSuccessHandler())
+              .failureHandler(oAuth2LoginFailureHandler())
       );
     } else {
       http.httpBasic(Customizer.withDefaults());
     }
 
-    // 로그아웃 설정: 기본 로그아웃 기능 활성화
     http.logout(logout -> logout
             .logoutSuccessUrl("/")
             .invalidateHttpSession(true)

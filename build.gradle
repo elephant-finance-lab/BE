@@ -42,6 +42,7 @@ dependencies {
 
 	implementation 'me.paulschwarz:spring-dotenv:4.0.0' //.env파일 읽는 라이브러리
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.0'
+	implementation 'me.paulschwarz:spring-dotenv:4.0.0'
 
 
 }
