@@ -26,10 +26,10 @@ class SecuritySmokeTest {
   @Test
   void me_returnsUnauthorizedWhenAnonymous() throws Exception {
     var res =
-            client()
-                    .send(
-                            HttpRequest.newBuilder(baseUri("/me")).GET().build(),
-                            HttpResponse.BodyHandlers.discarding());
+        client()
+            .send(
+                HttpRequest.newBuilder(baseUri("/me")).GET().build(),
+                HttpResponse.BodyHandlers.discarding());
 
     // 기존 3xx 리다이렉트 체크를 삭제하고, 우리 API 설계인 401 Unauthorized를 체크합니다.
     assertEquals(401, res.statusCode());
