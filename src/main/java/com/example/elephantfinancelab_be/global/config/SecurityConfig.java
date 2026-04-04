@@ -4,6 +4,7 @@ import com.example.elephantfinancelab_be.global.apiPayload.ApiResponse;
 import com.example.elephantfinancelab_be.global.apiPayload.code.BaseErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.code.GeneralErrorCode;
 import com.example.elephantfinancelab_be.global.auth.service.CustomOAuth2UserService;
+import com.example.elephantfinancelab_be.global.security.handler.CustomLogoutSuccessHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -32,21 +33,22 @@ public class SecurityConfig {
   private final Environment env;
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
   private final CustomOAuth2UserService customOAuth2UserService;
+  private final CustomLogoutSuccessHandler customLogoutSuccessHandler;
 
   private static final String[] PUBLIC_URLS = {
-    "/",
-    "/ui",
-    "/error",
-    "/login/**",
-    "/oauth2/**",
-    "/v3/api-docs/**",
-    "/swagger-ui/**",
-    "/swagger-ui.html",
-    "/api/auth/**"
+          "/",
+          "/ui",
+          "/error",
+          "/login/**",
+          "/oauth2/**",
+          "/v3/api-docs/**",
+          "/swagger-ui/**",
+          "/swagger-ui.html",
+          "/api/auth/**"
   };
 
   private static void writeApiFailure(HttpServletResponse response, BaseErrorCode errorCode)
-      throws IOException {
+          throws IOException {
     response.setStatus(errorCode.getStatus().value());
     response.setContentType(MediaType.APPLICATION_JSON_VALUE);
     response.setCharacterEncoding(StandardCharsets.UTF_8.name());
@@ -56,16 +58,15 @@ public class SecurityConfig {
   @Bean
   public AuthenticationEntryPoint jsonAuthenticationEntryPoint() {
     return (request, response, authException) ->
-        writeApiFailure(response, GeneralErrorCode.UNAUTHORIZED);
+            writeApiFailure(response, GeneralErrorCode.UNAUTHORIZED);
   }
 
   @Bean
   public AccessDeniedHandler jsonAccessDeniedHandler() {
     return (request, response, accessDeniedException) ->
-        writeApiFailure(response, GeneralErrorCode.FORBIDDEN);
+            writeApiFailure(response, GeneralErrorCode.FORBIDDEN);
   }
 
-  // TODO: JWT 발급 구현 후 토큰 생성 및 쿠키/헤더 세팅 로직 추가
   @Bean
   public AuthenticationSuccessHandler oAuth2LoginSuccessHandler() {
     return (request, response, authentication) -> response.sendRedirect("/api/auth/me");
@@ -78,57 +79,61 @@ public class SecurityConfig {
       response.setContentType(MediaType.APPLICATION_JSON_VALUE);
       response.setCharacterEncoding(StandardCharsets.UTF_8.name());
       OBJECT_MAPPER.writeValue(
-          response.getOutputStream(), ApiResponse.onFailure(GeneralErrorCode.UNAUTHORIZED, null));
+              response.getOutputStream(), ApiResponse.onFailure(GeneralErrorCode.UNAUTHORIZED, null));
     };
   }
 
   @Bean
   public SecurityFilterChain securityFilterChain(
-      HttpSecurity http,
-      AuthenticationEntryPoint jsonAuthenticationEntryPoint,
-      AccessDeniedHandler jsonAccessDeniedHandler)
-      throws Exception {
+          HttpSecurity http,
+          AuthenticationEntryPoint jsonAuthenticationEntryPoint,
+          AccessDeniedHandler jsonAccessDeniedHandler)
+          throws Exception {
 
     http.csrf(AbstractHttpConfigurer::disable)
-        .httpBasic(AbstractHttpConfigurer::disable)
-        .formLogin(AbstractHttpConfigurer::disable)
-        // TODO: JWT 발급 구현 후 STATELESS로 변경
-        .sessionManagement(
-            session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
-        .exceptionHandling(
-            ex ->
-                ex.authenticationEntryPoint(jsonAuthenticationEntryPoint)
-                    .accessDeniedHandler(jsonAccessDeniedHandler));
+            .httpBasic(AbstractHttpConfigurer::disable)
+            .formLogin(AbstractHttpConfigurer::disable)
+            .sessionManagement(
+                    session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+            .exceptionHandling(
+                    ex ->
+                            ex.authenticationEntryPoint(jsonAuthenticationEntryPoint)
+                                    .accessDeniedHandler(jsonAccessDeniedHandler));
 
     http.authorizeHttpRequests(
-        auth -> auth.requestMatchers(PUBLIC_URLS).permitAll().anyRequest().authenticated());
+            auth -> auth.requestMatchers(PUBLIC_URLS).permitAll().anyRequest().authenticated());
 
     String googleClientId =
-        env.getProperty("spring.security.oauth2.client.registration.google.client-id", "");
+            env.getProperty("spring.security.oauth2.client.registration.google.client-id", "");
     String naverClientId =
-        env.getProperty("spring.security.oauth2.client.registration.naver.client-id", "");
+            env.getProperty("spring.security.oauth2.client.registration.naver.client-id", "");
     String kakaoClientId =
-        env.getProperty("spring.security.oauth2.client.registration.kakao.client-id", "");
+            env.getProperty("spring.security.oauth2.client.registration.kakao.client-id", "");
 
     boolean oauthEnabled =
-        (googleClientId != null && !googleClientId.isBlank())
-            || (naverClientId != null && !naverClientId.isBlank())
-            || (kakaoClientId != null && !kakaoClientId.isBlank());
+            (googleClientId != null && !googleClientId.isBlank())
+                    || (naverClientId != null && !naverClientId.isBlank())
+                    || (kakaoClientId != null && !kakaoClientId.isBlank());
 
     if (oauthEnabled) {
       http.oauth2Login(
-          oauth2 ->
-              oauth2
-                  .userInfoEndpoint(userInfo -> userInfo.userService(customOAuth2UserService))
-                  .successHandler(oAuth2LoginSuccessHandler())
-                  .failureHandler(oAuth2LoginFailureHandler()));
+              oauth2 ->
+                      oauth2
+                              .userInfoEndpoint(userInfo -> userInfo.userService(customOAuth2UserService))
+                              .successHandler(oAuth2LoginSuccessHandler())
+                              .failureHandler(oAuth2LoginFailureHandler()));
     } else {
       http.httpBasic(Customizer.withDefaults());
     }
 
     http.logout(
-        logout ->
-            logout.logoutSuccessUrl("/").invalidateHttpSession(true).deleteCookies("JSESSIONID"));
+            logout ->
+                    logout
+                            .logoutUrl("/api/auth/logout")
+                            .logoutSuccessHandler(customLogoutSuccessHandler)
+                            .invalidateHttpSession(true)
+                            .clearAuthentication(true)
+                            .deleteCookies("JSESSIONID"));
 
     return http.build();
   }
