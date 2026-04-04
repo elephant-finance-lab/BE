@@ -11,11 +11,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    @GetMapping("/me")
-    public ResponseEntity<?> getMe(@AuthenticationPrincipal OAuth2User oAuth2User) {
-        if (oAuth2User == null) {
-            return ResponseEntity.status(401).body("로그인 필요");
-        }
-        return ResponseEntity.ok(oAuth2User.getAttributes());
+  @GetMapping("/me")
+  public ResponseEntity<?> getMe(@AuthenticationPrincipal OAuth2User oAuth2User) {
+    if (oAuth2User == null) {
+      return ResponseEntity.status(401).body("로그인 필요");
     }
+    return ResponseEntity.ok(oAuth2User.getAttributes());
+  }
 }
