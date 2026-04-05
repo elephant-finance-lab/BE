@@ -42,9 +42,8 @@ public class AuthController {
 
   @PostMapping("/token")
   public ApiResponse<?> reissueToken(
-      @RequestBody Map<String, String> body, HttpServletResponse response) {
-
-    String refreshToken = body.get("refreshToken");
+      @CookieValue(name = "refreshToken", required = false) String refreshToken,
+      HttpServletResponse response) {
 
     if (refreshToken == null || refreshToken.isBlank()) {
       return ApiResponse.onFailure(AuthErrorCode.TOKEN_MISSING_OR_EXPIRED, null);
