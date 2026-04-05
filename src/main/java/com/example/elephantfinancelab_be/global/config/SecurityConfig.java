@@ -4,7 +4,9 @@ import com.example.elephantfinancelab_be.global.apiPayload.ApiResponse;
 import com.example.elephantfinancelab_be.global.apiPayload.code.BaseErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.code.GeneralErrorCode;
 import com.example.elephantfinancelab_be.global.auth.service.CustomOAuth2UserService;
+import com.example.elephantfinancelab_be.global.auth.service.JwtFilter;
 import com.example.elephantfinancelab_be.global.security.handler.CustomLogoutSuccessHandler;
+import com.example.elephantfinancelab_be.global.security.handler.OAuth2LoginSuccessHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -23,7 +25,7 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
-import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
 @EnableWebSecurity
@@ -34,6 +36,8 @@ public class SecurityConfig {
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
   private final CustomOAuth2UserService customOAuth2UserService;
   private final CustomLogoutSuccessHandler customLogoutSuccessHandler;
+  private final OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
+  private final JwtFilter jwtFilter;
 
   private static final String[] PUBLIC_URLS = {
     "/",
@@ -68,11 +72,6 @@ public class SecurityConfig {
   }
 
   @Bean
-  public AuthenticationSuccessHandler oAuth2LoginSuccessHandler() {
-    return (request, response, authentication) -> response.sendRedirect("/api/auth/me");
-  }
-
-  @Bean
   public AuthenticationFailureHandler oAuth2LoginFailureHandler() {
     return (request, response, exception) -> {
       response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
@@ -94,7 +93,7 @@ public class SecurityConfig {
         .httpBasic(AbstractHttpConfigurer::disable)
         .formLogin(AbstractHttpConfigurer::disable)
         .sessionManagement(
-            session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+            session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .exceptionHandling(
             ex ->
                 ex.authenticationEntryPoint(jsonAuthenticationEntryPoint)
@@ -120,11 +119,13 @@ public class SecurityConfig {
           oauth2 ->
               oauth2
                   .userInfoEndpoint(userInfo -> userInfo.userService(customOAuth2UserService))
-                  .successHandler(oAuth2LoginSuccessHandler())
+                  .successHandler(oAuth2LoginSuccessHandler)
                   .failureHandler(oAuth2LoginFailureHandler()));
     } else {
       http.httpBasic(Customizer.withDefaults());
     }
+
+    http.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
     http.logout(
         logout ->
