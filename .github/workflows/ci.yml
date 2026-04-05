@@ -41,6 +41,12 @@ jobs:
           DB_URL: ${{ secrets.DB_URL }}
           DB_USERNAME: ${{ secrets.DB_USERNAME }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          KAKAO_CLIENT_ID: ${{ secrets.KAKAO_CLIENT_ID }}
+          KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
 
   # 배포 Job (Push일 때만 실행 = 머지 되었을 때)
   deploy:
