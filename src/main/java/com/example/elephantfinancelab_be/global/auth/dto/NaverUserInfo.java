@@ -6,7 +6,8 @@ public class NaverUserInfo implements OAuth2UserInfo {
   private Map<String, Object> attributes;
 
   public NaverUserInfo(Map<String, Object> attributes) {
-    this.attributes = (Map<String, Object>) attributes.get("response");
+    Map<String, Object> response = (Map<String, Object>) attributes.get("response");
+    this.attributes = (response != null) ? response : Map.of();
   }
 
   @Override

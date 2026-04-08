@@ -6,6 +6,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -29,6 +30,8 @@ import org.springframework.test.context.TestPropertySource;
     })
 class SecuritySmokeTest {
 
+  private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(5);
+
   @LocalServerPort private int port;
 
   @Test
@@ -39,20 +42,19 @@ class SecuritySmokeTest {
 
   @Test
   void me_returnsUnauthorizedWhenAnonymous() throws Exception {
-    var res =
-        client()
-            .send(
-                HttpRequest.newBuilder(baseUri("/me")).GET().build(),
-                HttpResponse.BodyHandlers.discarding());
+    var res = client().send(get("/me"), HttpResponse.BodyHandlers.discarding());
     assertEquals(401, res.statusCode());
   }
 
   private HttpClient client() {
-    return HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+    return HttpClient.newBuilder()
+        .connectTimeout(HTTP_TIMEOUT)
+        .followRedirects(HttpClient.Redirect.NEVER)
+        .build();
   }
 
   private HttpRequest get(String path) {
-    return HttpRequest.newBuilder(baseUri(path)).GET().build();
+    return HttpRequest.newBuilder(baseUri(path)).timeout(HTTP_TIMEOUT).GET().build();
   }
 
   private URI baseUri(String path) {

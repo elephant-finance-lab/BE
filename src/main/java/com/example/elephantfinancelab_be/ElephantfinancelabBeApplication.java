@@ -36,6 +36,7 @@ public class ElephantfinancelabBeApplication {
         if (!key.isEmpty()) values.put(key, value);
       }
     } catch (IOException e) {
+      System.err.println("Failed to load .env file: " + e.getMessage());
       return;
     }
 

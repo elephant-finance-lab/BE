@@ -37,7 +37,8 @@ public class AuthController {
     }
 
     if (userId == null) return ApiResponse.onFailure(AuthErrorCode.TOKEN_MISSING_OR_EXPIRED, null);
-    return new ApiResponse<>(true, "COMMON200", "성공입니다.", userId);
+
+    return new ApiResponse<>(true, "COMMON200", "성공입니다.", Map.of("userId", userId));
   }
 
   @PostMapping("/token")

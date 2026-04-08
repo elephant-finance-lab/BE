@@ -23,11 +23,13 @@ public class KakaoUserInfo implements OAuth2UserInfo {
 
   @Override
   public String getEmail() {
+    if (kakaoAccount == null) return null;
     return (String) kakaoAccount.get("email");
   }
 
   @Override
   public String getName() {
+    if (kakaoAccount == null) return null;
     Map<String, Object> profile = (Map<String, Object>) kakaoAccount.get("profile");
     return (profile != null) ? (String) profile.get("nickname") : null;
   }

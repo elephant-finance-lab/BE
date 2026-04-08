@@ -78,7 +78,7 @@ public class JwtProvider {
 
   public boolean validateRefreshToken(String userId, String refreshToken) {
     String stored = redisTemplate.opsForValue().get(REFRESH_TOKEN_PREFIX + userId);
-    return refreshToken.equals(stored);
+    return refreshToken != null && refreshToken.equals(stored);
   }
 
   public void deleteRefreshToken(String userId) {
