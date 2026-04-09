@@ -10,6 +10,5 @@ public class ElephantfinancelabBeApplication {
 
   public static void main(String[] args) {
     SpringApplication.run(ElephantfinancelabBeApplication.class, args);
-    // test
   }
 }

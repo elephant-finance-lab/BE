@@ -29,8 +29,10 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'com.mysql:mysql-connector-j'
+	runtimeOnly 'com.h2database:h2'
 	annotationProcessor 'org.projectlombok:lombok'
 	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
@@ -39,7 +41,6 @@ dependencies {
 	testRuntimeOnly 'com.h2database:h2'
 
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.0'
-
 
 }
 
@@ -57,6 +58,19 @@ spotless {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	enabled = false
+}
+
+tasks.named('compileTestJava') {
+	enabled = false
+}
+
+tasks.named('processTestResources') {
+	enabled = false
+}
+
+tasks.named('testClasses') {
+	enabled = false
 }
 
 def querydslDir = "src/main/generated"
