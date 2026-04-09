@@ -56,21 +56,13 @@ spotless {
 	}
 }
 
+// 기본: 테스트 실행 ON. 로컬에서만 건너뛸 때: ./gradlew build -PskipTests=true (또는 ./gradlew build -x test)
+def skipTests =
+		(findProperty('skipTests') ?: 'false').toString().toBoolean()
+
 tasks.named('test') {
 	useJUnitPlatform()
-	enabled = false
-}
-
-tasks.named('compileTestJava') {
-	enabled = false
-}
-
-tasks.named('processTestResources') {
-	enabled = false
-}
-
-tasks.named('testClasses') {
-	enabled = false
+	enabled = !skipTests
 }
 
 def querydslDir = "src/main/generated"

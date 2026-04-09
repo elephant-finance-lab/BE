@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class DevDataLoader implements ApplicationRunner {
 
+  // TODO: 하드코딩 해제
   private static final Long DEV_USER_ID = 1L;
   private static final UUID DEV_USER_UUID = UUID.fromString("550e8400-e29b-41d4-a716-446655440001");
 

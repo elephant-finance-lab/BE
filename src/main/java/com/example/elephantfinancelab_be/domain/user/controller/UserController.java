@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/users")
 public class UserController {
 
+  // TODO: 하드코딩 해제
   private static final Long DEV_USER_ID = 1L;
 
   private final UserQueryService userQueryService;
