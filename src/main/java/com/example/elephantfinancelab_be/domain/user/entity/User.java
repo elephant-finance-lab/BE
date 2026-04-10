@@ -30,7 +30,7 @@ public class User extends BaseEntity {
   @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long id;
 
-  @Column(name = "uuid", nullable = false, unique = true, length = 36)
+  @Column(name = "uuid", nullable = false, unique = true)
   private UUID uuid;
 
   @Enumerated(EnumType.STRING)
