@@ -60,6 +60,9 @@ public class UserTermsAgreement {
   private LocalDateTime createdAt;
 
   public void agree() {
+    if (this.agreed) {
+      return;
+    }
     this.agreed = true;
     this.agreedAt = LocalDateTime.now();
   }

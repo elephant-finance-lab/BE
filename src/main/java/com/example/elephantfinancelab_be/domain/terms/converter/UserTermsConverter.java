@@ -17,7 +17,11 @@ public final class UserTermsConverter {
   public static UserTermsResDTO.MyTerms toMyTermsRes(List<UserTermsAgreement> agreements) {
     Map<TermsType, UserTermsAgreement> byType = new EnumMap<>(TermsType.class);
     for (UserTermsAgreement a : agreements) {
-      byType.put(a.getTermsType(), a);
+      UserTermsAgreement previous = byType.putIfAbsent(a.getTermsType(), a);
+      if (previous != null) {
+        throw new IllegalStateException(
+            "Duplicate UserTermsAgreement for termsType: " + a.getTermsType());
+      }
     }
     List<UserTermsResDTO.Item> items =
         Stream.of(TermsType.values())

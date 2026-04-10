@@ -9,6 +9,7 @@ import com.example.elephantfinancelab_be.domain.user.exception.UserException;
 import com.example.elephantfinancelab_be.domain.user.exception.code.UserErrorCode;
 import com.example.elephantfinancelab_be.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,16 +30,26 @@ public class UserTermsCommandServiceImpl implements UserTermsCommandService {
 
     for (TermsType type : TermsType.values()) {
       UserTermsAgreement agreement =
-          userTermsAgreementRepository
-              .findByUser_IdAndTermsType(userId, type)
-              .orElseGet(
-                  () ->
-                      UserTermsAgreement.builder()
-                          .user(user)
-                          .termsType(type)
-                          .agreed(false)
-                          .agreedAt(null)
-                          .build());
+          userTermsAgreementRepository.findByUser_IdAndTermsType(userId, type).orElse(null);
+
+      if (agreement == null) {
+        try {
+          agreement =
+              userTermsAgreementRepository.save(
+                  UserTermsAgreement.builder()
+                      .user(user)
+                      .termsType(type)
+                      .agreed(false)
+                      .agreedAt(null)
+                      .build());
+        } catch (DataIntegrityViolationException e) {
+          agreement =
+              userTermsAgreementRepository
+                  .findByUser_IdAndTermsType(userId, type)
+                  .orElseThrow(() -> e);
+        }
+      }
+
       agreement.agree();
       userTermsAgreementRepository.save(agreement);
     }

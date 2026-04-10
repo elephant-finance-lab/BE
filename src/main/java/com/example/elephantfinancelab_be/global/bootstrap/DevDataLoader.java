@@ -36,6 +36,9 @@ public class DevDataLoader implements ApplicationRunner {
       }
       user = userRepository.save(createDevUser());
     }
+    if (!DEV_USER_UUID.equals(user.getUuid())) {
+      return;
+    }
     seedTermsAgreementsIfMissing(user);
   }
 
