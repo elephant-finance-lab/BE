@@ -4,7 +4,6 @@ import com.example.elephantfinancelab_be.global.apiPayload.ApiResponse;
 import com.example.elephantfinancelab_be.global.apiPayload.code.BaseErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.code.GeneralErrorCode;
 import com.example.elephantfinancelab_be.global.auth.service.CustomOAuth2UserService;
-import com.example.elephantfinancelab_be.global.auth.service.JwtFilter;
 import com.example.elephantfinancelab_be.global.security.handler.CustomLogoutSuccessHandler;
 import com.example.elephantfinancelab_be.global.security.handler.OAuth2LoginSuccessHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;

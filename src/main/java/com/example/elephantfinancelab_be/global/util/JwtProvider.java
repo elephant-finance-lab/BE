@@ -1,4 +1,4 @@
-package com.example.elephantfinancelab_be.global.auth.service;
+package com.example.elephantfinancelab_be.global.util;
 
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
@@ -50,7 +50,6 @@ public class JwtProvider {
             .signWith(getSigningKey())
             .compact();
 
-    // Redis에 저장 (TTL = refreshExpiration)
     redisTemplate
         .opsForValue()
         .set(REFRESH_TOKEN_PREFIX + userId, refreshToken, refreshExpiration, TimeUnit.MILLISECONDS);

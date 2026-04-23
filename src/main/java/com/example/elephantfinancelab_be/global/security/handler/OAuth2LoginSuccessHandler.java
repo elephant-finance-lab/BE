@@ -1,6 +1,6 @@
 package com.example.elephantfinancelab_be.global.security.handler;
 
-import com.example.elephantfinancelab_be.global.auth.service.JwtProvider;
+import com.example.elephantfinancelab_be.global.util.JwtProvider;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;

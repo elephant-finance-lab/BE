@@ -1,5 +1,6 @@
-package com.example.elephantfinancelab_be.global.auth.service;
+package com.example.elephantfinancelab_be.global.config;
 
+import com.example.elephantfinancelab_be.global.util.JwtProvider;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,7 +28,6 @@ public class JwtFilter extends OncePerRequestFilter {
 
     if (token != null && jwtProvider.validateToken(token)) {
       String userId = jwtProvider.getUserId(token);
-      // 권한 없이 인증 객체만 생성 (소셜 로그인이라 별도 권한 불필요)
       UsernamePasswordAuthenticationToken authentication =
           new UsernamePasswordAuthenticationToken(userId, null, List.of());
       SecurityContextHolder.getContext().setAuthentication(authentication);
