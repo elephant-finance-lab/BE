@@ -8,6 +8,10 @@ spring:
     driver-class-name: org.h2.Driver
     username: sa
     password:
+  data:
+    redis:
+      host: localhost
+      port: 6379
 
   jpa:
     hibernate:
@@ -24,3 +28,8 @@ spring:
 springdoc:
   swagger-ui:
     enabled: false
+
+jwt:
+  secret: test-secret-key-must-be-at-least-32-characters-long
+  access-expiration: 1800000
+  refresh-expiration: 1209600000

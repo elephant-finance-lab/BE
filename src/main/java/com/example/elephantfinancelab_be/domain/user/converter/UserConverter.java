@@ -17,4 +17,16 @@ public final class UserConverter {
         .avatarUrl(user.getAvatarUrl())
         .build();
   }
+
+  public static UserResDTO.MeRes toMeRes(String userId, String accessToken) {
+    return UserResDTO.MeRes.builder().userId(userId).accessToken(accessToken).build();
+  }
+
+  public static UserResDTO.MeRes toMeRes(String userId) {
+    return UserResDTO.MeRes.builder().userId(userId).build();
+  }
+
+  public static UserResDTO.TokenRes toTokenRes(String accessToken) {
+    return UserResDTO.TokenRes.builder().accessToken(accessToken).build();
+  }
 }

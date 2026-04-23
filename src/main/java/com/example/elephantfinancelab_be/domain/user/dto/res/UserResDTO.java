@@ -14,11 +14,27 @@ public class UserResDTO {
   @AllArgsConstructor
   @Builder
   public static class Profile {
-
     private UUID uuid;
     private String name;
     private String phone;
     private Gender gender;
     private String avatarUrl;
+  }
+
+  @Getter
+  @NoArgsConstructor
+  @AllArgsConstructor
+  @Builder
+  public static class MeRes {
+    private String userId;
+    private String accessToken;
+  }
+
+  @Getter
+  @NoArgsConstructor
+  @AllArgsConstructor
+  @Builder
+  public static class TokenRes {
+    private String accessToken;
   }
 }

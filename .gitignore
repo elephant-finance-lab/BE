@@ -36,7 +36,12 @@ out/
 ### VS Code ###
 .vscode/
 
+
+### .env ###
+.env
+
 ### Local environment ###
 .env
 .env.*
 !.env.example
+
