@@ -1,4 +1,4 @@
-package com.example.elephantfinancelab_be;
+package com.example.elephantfinancelab_be.web;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -16,7 +16,8 @@ import org.springframework.test.context.TestPropertySource;
       "NAVER_CLIENT_ID=test",
       "NAVER_CLIENT_SECRET=test"
     })
-class ElephantfinancelabBeApplicationTests {
+class SecuritySmokeTest {
+
   @Test
   void contextLoads() {}
 }
