@@ -19,22 +19,25 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/recommendations")
 public class RecommendationController {
 
-    private final RecommendationService recommendationService;
+  private final RecommendationService recommendationService;
 
-    @Operation(summary = "추천 종목 목록 조회", description = "유저 맞춤형 추천 종목 리스트를 조회합니다.")
-    @GetMapping("")
-    public ResponseEntity<ApiResponse<RecommendationResponseDTO.RecommendationListDTO>> getRecommendationList() {
-        RecommendationResponseDTO.RecommendationListDTO result = recommendationService.getRecommendationList();
-        return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
-                .body(ApiResponse.of(GeneralSuccessCode.OK, result));
-    }
+  @Operation(summary = "추천 종목 목록 조회", description = "유저 맞춤형 추천 종목 리스트를 조회합니다.")
+  @GetMapping("")
+  public ResponseEntity<ApiResponse<RecommendationResponseDTO.RecommendationListDTO>>
+      getRecommendationList() {
+    RecommendationResponseDTO.RecommendationListDTO result =
+        recommendationService.getRecommendationList();
+    return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
+        .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+  }
 
-    @Operation(summary = "추천 종목 상세 조회", description = "특정 종목의 상세 추천 사유 및 분석 내용을 조회합니다.")
-    @GetMapping("/{stockCode}/reasons")
-    public ResponseEntity<ApiResponse<RecommendationResponseDTO.RecommendationDetailDTO>> getRecommendationDetail(
-            @PathVariable(name = "stockCode") String stockCode) {
-        RecommendationResponseDTO.RecommendationDetailDTO result = recommendationService.getRecommendationDetail(stockCode);
-        return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
-                .body(ApiResponse.of(GeneralSuccessCode.OK, result));
-    }
+  @Operation(summary = "추천 종목 상세 조회", description = "특정 종목의 상세 추천 사유 및 분석 내용을 조회합니다.")
+  @GetMapping("/{stockCode}/reasons")
+  public ResponseEntity<ApiResponse<RecommendationResponseDTO.RecommendationDetailDTO>>
+      getRecommendationDetail(@PathVariable(name = "stockCode") String stockCode) {
+    RecommendationResponseDTO.RecommendationDetailDTO result =
+        recommendationService.getRecommendationDetail(stockCode);
+    return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
+        .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+  }
 }
