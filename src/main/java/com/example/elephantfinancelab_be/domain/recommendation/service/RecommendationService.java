@@ -2,24 +2,38 @@ package com.example.elephantfinancelab_be.domain.recommendation.service;
 
 import com.example.elephantfinancelab_be.domain.recommendation.converter.RecommendationConverter;
 import com.example.elephantfinancelab_be.domain.recommendation.dto.RecommendationResponseDTO;
+import com.example.elephantfinancelab_be.domain.recommendation.entity.Recommendation;
+import com.example.elephantfinancelab_be.domain.recommendation.repository.RecommendationRepository;
+import com.example.elephantfinancelab_be.global.apiPayload.code.StockErrorCode;
+import com.example.elephantfinancelab_be.global.apiPayload.exception.GeneralException;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class RecommendationService {
 
-  public RecommendationResponseDTO.RecommendationListDTO getRecommendationList() {
-    // 1. 데이터 조회 (현재는 Converter에서 임시 생성)
-    var infoList = RecommendationConverter.toRecommendationInfoDTOList();
+  private final RecommendationRepository recommendationRepository;
 
-    // 2. DTO 변환 후 반환
-    return RecommendationConverter.toRecommendationListDTO(infoList);
+  public RecommendationResponseDTO.RecommendationListDTO getRecommendationList() {
+    List<Recommendation> recommendations = recommendationRepository.findAll();
+
+    List<RecommendationResponseDTO.RecommendationInfoDTO> infoList =
+        recommendations.stream().map(RecommendationConverter::toRecommendationInfoDTO).toList();
+
+    return RecommendationConverter.toRecommendationListDTO("사용자 맞춤 투자 추천 리스트", infoList);
   }
 
   public RecommendationResponseDTO.RecommendationDetailDTO getRecommendationDetail(
       String stockCode) {
-    // 실제로는 DB에서 stockCode로 정보를 조회해야 하지만, 현재는 임시 데이터 반환
-    return RecommendationConverter.toRecommendationDetailDTO(stockCode);
+    Recommendation recommendation =
+        recommendationRepository
+            .findByTickerCodeIgnoreCase(stockCode.trim())
+            .orElseThrow(() -> new GeneralException(StockErrorCode.STOCK_NOT_FOUND));
+
+    return RecommendationConverter.toRecommendationDetailDTO(recommendation, "맞춤형 투자 전략 분석");
   }
 }

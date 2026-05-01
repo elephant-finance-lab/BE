@@ -1,6 +1,6 @@
 app:
   seed:
-    enabled: true #[TODO]: 운영 시 false로 전환
+    enabled: true
 
 spring:
   application:
@@ -58,7 +58,6 @@ spring:
             client-name: Kakao
             scope:
               - profile_nickname
-              #- account_email
         provider:
           naver:
             authorization-uri: https://nid.naver.com/oauth2.0/authorize
