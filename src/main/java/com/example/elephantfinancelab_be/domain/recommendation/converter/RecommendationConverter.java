@@ -28,7 +28,12 @@ public final class RecommendationConverter {
         .changeRate(entity.getChangeRate())
         .currency(entity.getCurrency())
         .isSelected(true)
-        .reason(entity.getRecommendReason().substring(0, 10) + "...")
+        .reason(
+            entity.getRecommendReason() == null
+                ? ""
+                : entity.getRecommendReason().length() > 10
+                    ? entity.getRecommendReason().substring(0, 10) + "..."
+                    : entity.getRecommendReason())
         .score(entity.getScore())
         .build();
   }
