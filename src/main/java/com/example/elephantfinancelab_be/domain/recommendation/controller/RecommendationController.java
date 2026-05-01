@@ -42,22 +42,21 @@ public class RecommendationController {
   @Operation(summary = "추천 종목 선택 저장", description = "사용자가 선택한 추천 종목을 저장합니다.")
   @PostMapping("/select")
   public ResponseEntity<ApiResponse<RecommendationResponseDTO.RecommendationSelectDTO>>
-  createSelectedRecommendations(
+      createSelectedRecommendations(
           @RequestBody RecommendationRequestDTO.SelectRecommendationDTO request) {
     RecommendationResponseDTO.RecommendationSelectDTO result =
-            recommendationService.saveSelectedRecommendations(request);
+        recommendationService.saveSelectedRecommendations(request);
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
-            .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+        .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }
 
   @Operation(summary = "매수 비중 옵션 저장", description = "사용자가 선택한 매수 비중 옵션을 저장합니다.")
   @PostMapping("/purchase")
   public ResponseEntity<ApiResponse<RecommendationResponseDTO.PurchaseOptionDTO>>
-  createPurchaseOption(
-          @RequestBody RecommendationRequestDTO.PurchaseOptionRequestDTO request) {
+      createPurchaseOption(@RequestBody RecommendationRequestDTO.PurchaseOptionRequestDTO request) {
     RecommendationResponseDTO.PurchaseOptionDTO result =
-            recommendationService.savePurchaseOption(request);
+        recommendationService.savePurchaseOption(request);
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
-            .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+        .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }
 }

@@ -64,6 +64,7 @@ public class RecommendationResponseDTO {
     private String priceAttractiveness;
     private String risk;
   }
+
   // --- 추천 종목 선택 저장 응답 ---
   @Builder
   @Getter
@@ -85,5 +86,4 @@ public class RecommendationResponseDTO {
     private int maxRate;
     private String label;
   }
-
 }
