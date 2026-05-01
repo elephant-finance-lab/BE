@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Table
+@Table(uniqueConstraints = @UniqueConstraint(columnNames = "tickerCode"))
 @Getter
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -15,7 +15,9 @@ public class Recommendation {
   @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long id;
 
+  @Column(unique = true, nullable = false)
   private String tickerCode;
+
   private String companyName;
   private String logoUrl;
   private Long currentPrice;

@@ -7,6 +7,7 @@ import com.example.elephantfinancelab_be.global.apiPayload.ApiResponse;
 import com.example.elephantfinancelab_be.global.apiPayload.code.GeneralSuccessCode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -43,7 +44,7 @@ public class RecommendationController {
   @PostMapping("/select")
   public ResponseEntity<ApiResponse<RecommendationResponseDTO.RecommendationSelectDTO>>
       createSelectedRecommendations(
-          @RequestBody RecommendationRequestDTO.SelectRecommendationDTO request) {
+          @Valid @RequestBody RecommendationRequestDTO.SelectRecommendationDTO request) {
     RecommendationResponseDTO.RecommendationSelectDTO result =
         recommendationService.saveSelectedRecommendations(request);
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
@@ -53,7 +54,8 @@ public class RecommendationController {
   @Operation(summary = "매수 비중 옵션 저장", description = "사용자가 선택한 매수 비중 옵션을 저장합니다.")
   @PostMapping("/purchase")
   public ResponseEntity<ApiResponse<RecommendationResponseDTO.PurchaseOptionDTO>>
-      createPurchaseOption(@RequestBody RecommendationRequestDTO.PurchaseOptionRequestDTO request) {
+      createPurchaseOption(
+          @Valid @RequestBody RecommendationRequestDTO.PurchaseOptionRequestDTO request) {
     RecommendationResponseDTO.PurchaseOptionDTO result =
         recommendationService.savePurchaseOption(request);
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())

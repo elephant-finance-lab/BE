@@ -42,6 +42,10 @@ public class RecommendationService {
   public RecommendationResponseDTO.RecommendationSelectDTO saveSelectedRecommendations(
       RecommendationRequestDTO.SelectRecommendationDTO request) {
 
+    if (request == null || request.getSelectedRecommendations() == null) {
+      throw new GeneralException(RecommendationErrorCode.NO_SELECTED_RECOMMENDATION);
+    }
+
     List<Long> ids =
         request.getSelectedRecommendations().stream()
             .map(RecommendationRequestDTO.RecommendationIdDTO::getRecommendationId)
