@@ -64,4 +64,26 @@ public class RecommendationResponseDTO {
     private String priceAttractiveness;
     private String risk;
   }
+  // --- 추천 종목 선택 저장 응답 ---
+  @Builder
+  @Getter
+  @NoArgsConstructor
+  @AllArgsConstructor
+  public static class RecommendationSelectDTO {
+    private int selectedCount;
+    private List<Long> recommendationIds;
+  }
+
+  // --- 매수 비중 옵션 저장 응답 ---
+  @Builder
+  @Getter
+  @NoArgsConstructor
+  @AllArgsConstructor
+  public static class PurchaseOptionDTO {
+    private int optionId;
+    private int minRate;
+    private int maxRate;
+    private String label;
+  }
+
 }
