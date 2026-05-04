@@ -1,4 +1,4 @@
-package com.example.elephantfinancelab_be.domain.recommendation.dto;
+package com.example.elephantfinancelab_be.domain.recommendation.dto.req;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -9,7 +9,7 @@ import java.util.List;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-public class RecommendationRequestDTO {
+public class RecommendationReqDTO {
 
   @Getter
   @NoArgsConstructor
