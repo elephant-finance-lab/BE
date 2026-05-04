@@ -1,4 +1,4 @@
-package com.example.elephantfinancelab_be.domain.recommendation.dto;
+package com.example.elephantfinancelab_be.domain.recommendation.dto.res;
 
 import java.util.List;
 import lombok.AllArgsConstructor;
@@ -6,7 +6,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-public class RecommendationResponseDTO {
+public class RecommendationResDTO {
 
   @Builder
   @Getter
