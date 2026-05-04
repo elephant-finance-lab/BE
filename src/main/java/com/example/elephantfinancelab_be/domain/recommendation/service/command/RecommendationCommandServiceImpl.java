@@ -5,6 +5,7 @@ import com.example.elephantfinancelab_be.domain.recommendation.dto.res.Recommend
 import com.example.elephantfinancelab_be.global.apiPayload.code.RecommendationErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.GeneralException;
 import java.util.List;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,7 +25,9 @@ public class RecommendationCommandServiceImpl implements RecommendationCommandSe
 
     List<Long> ids =
         request.getSelectedRecommendations().stream()
+            .filter(Objects::nonNull)
             .map(RecommendationReqDTO.RecommendationIdDTO::getRecommendationId)
+            .filter(Objects::nonNull)
             .toList();
 
     if (ids.isEmpty()) {

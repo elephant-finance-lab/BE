@@ -20,7 +20,7 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
 
   @Override
   public RecommendationResDTO.RecommendationListDTO findRecommendationList() {
-    List<Recommendation> recommendations = recommendationRepository.findAll();
+    List<Recommendation> recommendations = recommendationRepository.findAllByOrderByRankingAsc();
     List<RecommendationResDTO.RecommendationInfoDTO> infoList =
         recommendations.stream().map(RecommendationConverter::toRecommendationInfoDTO).toList();
     return RecommendationConverter.toRecommendationListDTO("사용자 맞춤 투자 추천 리스트", infoList);
