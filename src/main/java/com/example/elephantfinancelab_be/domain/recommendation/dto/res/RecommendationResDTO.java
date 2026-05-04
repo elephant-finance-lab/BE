@@ -64,4 +64,24 @@ public class RecommendationResDTO {
     private String priceAttractiveness;
     private String risk;
   }
+
+  @Builder
+  @Getter
+  @NoArgsConstructor
+  @AllArgsConstructor
+  public static class RecommendationSelectDTO {
+    private int selectedCount;
+    private List<Long> recommendationIds;
+  }
+
+  @Builder
+  @Getter
+  @NoArgsConstructor
+  @AllArgsConstructor
+  public static class PurchaseOptionDTO {
+    private int optionId;
+    private int minRate;
+    private int maxRate;
+    private String label;
+  }
 }
