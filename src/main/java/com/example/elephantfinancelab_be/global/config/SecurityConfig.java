@@ -32,7 +32,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
   private final Environment env;
-  private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+  private final ObjectMapper objectMapper;
   private final CustomOAuth2UserService customOAuth2UserService;
   private final CustomLogoutSuccessHandler customLogoutSuccessHandler;
   private final OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
@@ -52,12 +52,12 @@ public class SecurityConfig {
     "/api/chart/ranking"
   };
 
-  private static void writeApiFailure(HttpServletResponse response, BaseErrorCode errorCode)
+  private void writeApiFailure(HttpServletResponse response, BaseErrorCode errorCode)
       throws IOException {
     response.setStatus(errorCode.getStatus().value());
     response.setContentType(MediaType.APPLICATION_JSON_VALUE);
     response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-    OBJECT_MAPPER.writeValue(response.getOutputStream(), ApiResponse.onFailure(errorCode, null));
+    objectMapper.writeValue(response.getOutputStream(), ApiResponse.onFailure(errorCode, null));
   }
 
   @Bean
@@ -78,7 +78,7 @@ public class SecurityConfig {
       response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
       response.setContentType(MediaType.APPLICATION_JSON_VALUE);
       response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-      OBJECT_MAPPER.writeValue(
+      objectMapper.writeValue(
           response.getOutputStream(), ApiResponse.onFailure(GeneralErrorCode.UNAUTHORIZED, null));
     };
   }

@@ -12,6 +12,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Map;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -25,7 +26,11 @@ public class KisAccessTokenClient {
 
   private static final String TOKEN_PATH = "/oauth2/tokenP";
   private static final String TOKEN_REDIS_KEY = "kis:access-token";
+  private static final String TOKEN_LOCK_REDIS_KEY = "kis:access-token:lock";
   private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
+  private static final Duration TOKEN_LOCK_TTL = Duration.ofSeconds(15);
+  private static final Duration TOKEN_WAIT_TIMEOUT = Duration.ofSeconds(8);
+  private static final Duration TOKEN_WAIT_INTERVAL = Duration.ofMillis(100);
 
   private final KisProperties kisProperties;
   private final ObjectMapper objectMapper;
@@ -38,7 +43,20 @@ public class KisAccessTokenClient {
       return cachedToken;
     }
 
-    return issueAccessToken();
+    String lockValue = UUID.randomUUID().toString();
+    if (acquireTokenLock(lockValue)) {
+      try {
+        String tokenAfterLock = stringRedisTemplate.opsForValue().get(TOKEN_REDIS_KEY);
+        if (tokenAfterLock != null && !tokenAfterLock.isBlank()) {
+          return tokenAfterLock;
+        }
+        return issueAccessToken();
+      } finally {
+        releaseTokenLock(lockValue);
+      }
+    }
+
+    return waitForIssuedToken();
   }
 
   private String issueAccessToken() {
@@ -79,6 +97,41 @@ public class KisAccessTokenClient {
       Thread.currentThread().interrupt();
       throw new ChartException(ChartErrorCode.KIS_ACCESS_TOKEN_FAILED, e);
     }
+  }
+
+  private boolean acquireTokenLock(String lockValue) {
+    Boolean locked =
+        stringRedisTemplate
+            .opsForValue()
+            .setIfAbsent(TOKEN_LOCK_REDIS_KEY, lockValue, TOKEN_LOCK_TTL);
+    return Boolean.TRUE.equals(locked);
+  }
+
+  private void releaseTokenLock(String lockValue) {
+    String currentLockValue = stringRedisTemplate.opsForValue().get(TOKEN_LOCK_REDIS_KEY);
+    if (lockValue.equals(currentLockValue)) {
+      stringRedisTemplate.delete(TOKEN_LOCK_REDIS_KEY);
+    }
+  }
+
+  private String waitForIssuedToken() {
+    long deadline = System.nanoTime() + TOKEN_WAIT_TIMEOUT.toNanos();
+    while (System.nanoTime() < deadline) {
+      String token = stringRedisTemplate.opsForValue().get(TOKEN_REDIS_KEY);
+      if (token != null && !token.isBlank()) {
+        return token;
+      }
+
+      try {
+        Thread.sleep(TOKEN_WAIT_INTERVAL.toMillis());
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new ChartException(ChartErrorCode.KIS_ACCESS_TOKEN_FAILED, e);
+      }
+    }
+
+    log.warn("한국투자증권 접근 토큰 발급 대기 시간이 초과되었습니다.");
+    throw new ChartException(ChartErrorCode.KIS_ACCESS_TOKEN_FAILED);
   }
 
   private URI tokenUri() {

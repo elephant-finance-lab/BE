@@ -1,6 +1,7 @@
 package com.example.elephantfinancelab_be.domain.chart.entity;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -78,7 +79,7 @@ public enum RankingType {
     this.path = path;
     this.trId = trId;
     this.metricField = metricField;
-    this.queryParams = queryParams;
+    this.queryParams = Collections.unmodifiableMap(new LinkedHashMap<>(queryParams));
   }
 
   public String getValue() {
