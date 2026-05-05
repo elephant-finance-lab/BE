@@ -83,6 +83,12 @@ springdoc:
     path: /swagger-ui.html
     operations-sorter: alpha
 
+kis:
+  app-key: ${KIS_APP_KEY}
+  app-secret: ${KIS_APP_SECRET}
+  base-url: ${KIS_BASE_URL:https://openapi.koreainvestment.com:9443}
+  websocket-url: ${KIS_WS_URL:ws://ops.koreainvestment.com:21000}
+
 logging:
   level:
     org.springframework.security: DEBUG

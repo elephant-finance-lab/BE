@@ -33,3 +33,10 @@ jwt:
   secret: test-secret-key-must-be-at-least-32-characters-long
   access-expiration: 1800000
   refresh-expiration: 1209600000
+
+kis:
+  app-key: test-app-key
+  app-secret: test-app-secret
+  base-url: https://openapi.koreainvestment.com:9443
+  websocket-url: ws://ops.koreainvestment.com:21000
+  websocket-enabled: false
