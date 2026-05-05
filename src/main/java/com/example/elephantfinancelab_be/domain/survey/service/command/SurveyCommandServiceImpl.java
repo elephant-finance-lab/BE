@@ -35,7 +35,7 @@ public class SurveyCommandServiceImpl implements SurveyCommandService {
         userRepository
             .findById(userId)
             .orElseThrow(() -> new UserException(UserErrorCode.USER_NOT_FOUND));
-    if (user.isDeleted()) {
+    if (user.isDeleted() || !user.isActive()) {
       throw new UserException(UserErrorCode.USER_NOT_FOUND);
     }
     return user;
