@@ -23,18 +23,18 @@ import org.springframework.stereotype.Component;
 public class KisApprovalKeyClient {
 
   private static final String APPROVAL_PATH = "/oauth2/Approval";
+  private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
 
   private final KisProperties kisProperties;
   private final ObjectMapper objectMapper;
-  private final HttpClient httpClient =
-      HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+  private final HttpClient httpClient;
 
   public String issueApprovalKey() {
     try {
       HttpRequest request =
           HttpRequest.newBuilder()
               .uri(approvalUri())
-              .timeout(Duration.ofSeconds(10))
+              .timeout(REQUEST_TIMEOUT)
               .header("content-type", MediaType.APPLICATION_JSON_VALUE + "; utf-8")
               .POST(HttpRequest.BodyPublishers.ofString(requestBody()))
               .build();

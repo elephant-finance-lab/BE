@@ -35,8 +35,7 @@ public class KisMarketIndexWebSocketClient {
   private final MarketIndexRealtimeParser marketIndexRealtimeParser;
   private final MarketIndexRedisService marketIndexRedisService;
   private final ObjectMapper objectMapper;
-  private final HttpClient httpClient =
-      HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+  private final HttpClient httpClient;
   private final ScheduledExecutorService reconnectExecutor =
       Executors.newSingleThreadScheduledExecutor(
           runnable -> {

@@ -3,6 +3,7 @@ package com.example.elephantfinancelab_be.domain.chart.service;
 import com.example.elephantfinancelab_be.domain.chart.dto.res.MarketIndexResDTO;
 import com.example.elephantfinancelab_be.domain.chart.entity.MarketIndexMarket;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -23,6 +24,7 @@ public class MarketIndexRealtimeParser {
 
   private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
   private static final DateTimeFormatter KIS_TIME_FORMATTER = DateTimeFormatter.ofPattern("HHmmss");
+  private static final Duration FUTURE_TIMESTAMP_TOLERANCE = Duration.ofHours(1);
   private static final int INDEX_CODE_FIELD = 0;
   private static final int TRADE_TIME_FIELD = 1;
   private static final int CURRENT_VALUE_FIELD = 2;
@@ -123,7 +125,13 @@ public class MarketIndexRealtimeParser {
     }
 
     try {
-      return LocalDateTime.of(today, LocalTime.parse(kisTime, KIS_TIME_FORMATTER));
+      LocalDateTime now = LocalDateTime.now(KOREA_ZONE).withNano(0);
+      LocalDateTime timestamp =
+          LocalDateTime.of(today, LocalTime.parse(kisTime, KIS_TIME_FORMATTER));
+      if (timestamp.isAfter(now.plus(FUTURE_TIMESTAMP_TOLERANCE))) {
+        return timestamp.minusDays(1);
+      }
+      return timestamp;
     } catch (DateTimeParseException e) {
       return LocalDateTime.now(KOREA_ZONE).withNano(0);
     }

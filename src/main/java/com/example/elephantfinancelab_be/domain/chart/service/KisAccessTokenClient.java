@@ -30,8 +30,7 @@ public class KisAccessTokenClient {
   private final KisProperties kisProperties;
   private final ObjectMapper objectMapper;
   private final StringRedisTemplate stringRedisTemplate;
-  private final HttpClient httpClient =
-      HttpClient.newBuilder().connectTimeout(REQUEST_TIMEOUT).build();
+  private final HttpClient httpClient;
 
   public String getAccessToken() {
     String cachedToken = stringRedisTemplate.opsForValue().get(TOKEN_REDIS_KEY);

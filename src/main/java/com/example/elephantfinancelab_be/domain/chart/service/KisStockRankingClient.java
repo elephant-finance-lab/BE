@@ -35,8 +35,7 @@ public class KisStockRankingClient {
   private final KisProperties kisProperties;
   private final KisAccessTokenClient accessTokenClient;
   private final ObjectMapper objectMapper;
-  private final HttpClient httpClient =
-      HttpClient.newBuilder().connectTimeout(REQUEST_TIMEOUT).build();
+  private final HttpClient httpClient;
 
   public List<RankingResDTO.RankingItem> fetchRanking(RankingType type) {
     try {
@@ -141,16 +140,47 @@ public class KisStockRankingClient {
 
   private Integer intValue(JsonNode node, String fieldName, int defaultValue) {
     String value = textValue(node, fieldName);
-    return value == null ? defaultValue : Integer.valueOf(value);
+    if (value == null) {
+      return defaultValue;
+    }
+
+    try {
+      return Integer.valueOf(normalizeNumericValue(value));
+    } catch (NumberFormatException e) {
+      log.warn("한국투자증권 종목 랭킹 응답의 순위 형식이 올바르지 않습니다. field={}, value={}", fieldName, value);
+      return defaultValue;
+    }
   }
 
   private Long longValue(JsonNode node, String fieldName) {
     String value = textValue(node, fieldName);
-    return value == null ? null : Long.valueOf(value);
+    if (value == null) {
+      return 0L;
+    }
+
+    try {
+      return new BigDecimal(normalizeNumericValue(value)).longValue();
+    } catch (NumberFormatException e) {
+      log.warn("한국투자증권 종목 랭킹 응답의 정수 형식이 올바르지 않습니다. field={}, value={}", fieldName, value);
+      return 0L;
+    }
   }
 
   private BigDecimal decimalValue(JsonNode node, String fieldName) {
     String value = textValue(node, fieldName);
-    return value == null ? null : new BigDecimal(value);
+    if (value == null) {
+      return BigDecimal.ZERO;
+    }
+
+    try {
+      return new BigDecimal(normalizeNumericValue(value));
+    } catch (NumberFormatException e) {
+      log.warn("한국투자증권 종목 랭킹 응답의 숫자 형식이 올바르지 않습니다. field={}, value={}", fieldName, value);
+      return BigDecimal.ZERO;
+    }
+  }
+
+  private String normalizeNumericValue(String value) {
+    return value.trim().replace(",", "");
   }
 }
