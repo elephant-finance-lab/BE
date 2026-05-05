@@ -50,7 +50,7 @@ public class MarketIndexRealtimeParser {
       return List.of();
     }
 
-    String[] fields = parts[3].split("\\^");
+    String[] fields = parts[3].split("\\^", -1);
     if (fields.length <= CHANGE_RATE_FIELD) {
       log.warn("KIS realtime index message has insufficient field count. count={}", fields.length);
       return List.of();
@@ -99,7 +99,12 @@ public class MarketIndexRealtimeParser {
     if (value == null || value.isBlank()) {
       return BigDecimal.ZERO;
     }
-    return new BigDecimal(value.trim());
+    try {
+      return new BigDecimal(value.trim());
+    } catch (NumberFormatException e) {
+      log.warn("Invalid decimal value in KIS realtime payload. value={}", value);
+      return BigDecimal.ZERO;
+    }
   }
 
   private BigDecimal applySign(BigDecimal value, String signCode) {
