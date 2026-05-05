@@ -48,7 +48,8 @@ public class SecurityConfig {
     "/swagger-ui/**",
     "/swagger-ui.html",
     "/api/auth/**",
-    "/api/chart/market"
+    "/api/chart/market",
+    "/api/chart/ranking"
   };
 
   private static void writeApiFailure(HttpServletResponse response, BaseErrorCode errorCode)

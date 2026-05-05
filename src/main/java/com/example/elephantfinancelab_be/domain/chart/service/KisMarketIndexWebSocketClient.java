@@ -52,12 +52,12 @@ public class KisMarketIndexWebSocketClient {
   @EventListener(ApplicationReadyEvent.class)
   public void start() {
     if (!kisProperties.isWebsocketEnabled()) {
-      log.info("KIS market index WebSocket is disabled");
+      log.info("한국투자증권 시장 지수 웹소켓이 비활성화되어 있습니다.");
       return;
     }
 
     if (!hasText(kisProperties.getAppKey()) || !hasText(kisProperties.getAppSecret())) {
-      log.warn("KIS market index WebSocket skipped because credentials are not configured");
+      log.warn("한국투자증권 인증 정보가 없어 시장 지수 웹소켓 연결을 건너뜁니다.");
       return;
     }
 
@@ -70,7 +70,7 @@ public class KisMarketIndexWebSocketClient {
     running.set(false);
     WebSocket currentWebSocket = webSocket;
     if (currentWebSocket != null) {
-      currentWebSocket.sendClose(WebSocket.NORMAL_CLOSURE, "server shutdown");
+      currentWebSocket.sendClose(WebSocket.NORMAL_CLOSURE, "서버 종료");
     }
     reconnectExecutor.shutdownNow();
   }
@@ -90,14 +90,14 @@ public class KisMarketIndexWebSocketClient {
           .whenComplete(
               (socket, throwable) -> {
                 if (throwable != null) {
-                  log.warn("KIS market index WebSocket connection failed", throwable);
+                  log.warn("한국투자증권 시장 지수 웹소켓 연결에 실패했습니다.", throwable);
                   scheduleReconnect();
                   return;
                 }
                 webSocket = socket;
               });
     } catch (RuntimeException e) {
-      log.warn("KIS market index WebSocket connection preparation failed", e);
+      log.warn("한국투자증권 시장 지수 웹소켓 연결 준비에 실패했습니다.", e);
       scheduleReconnect();
     }
   }
@@ -107,9 +107,7 @@ public class KisMarketIndexWebSocketClient {
       return;
     }
 
-    log.info(
-        "KIS market index WebSocket reconnect scheduled after {} seconds",
-        RECONNECT_DELAY.toSeconds());
+    log.info("한국투자증권 시장 지수 웹소켓 재연결을 {}초 후 시도합니다.", RECONNECT_DELAY.toSeconds());
     reconnectExecutor.schedule(
         () -> {
           reconnectScheduled.set(false);
@@ -126,15 +124,13 @@ public class KisMarketIndexWebSocketClient {
           .whenComplete(
               (unused, throwable) -> {
                 if (throwable != null) {
-                  log.warn(
-                      "KIS market index subscription failed. market={}", market.name(), throwable);
+                  log.warn("한국투자증권 시장 지수 구독에 실패했습니다. market={}", market.name(), throwable);
                   return;
                 }
-                log.info("KIS market index subscribed. market={}", market.name());
+                log.info("한국투자증권 시장 지수 구독 완료. market={}", market.name());
               });
     } catch (JsonProcessingException e) {
-      log.warn(
-          "Failed to build KIS market index subscription message. market={}", market.name(), e);
+      log.warn("한국투자증권 시장 지수 구독 메시지 생성에 실패했습니다. market={}", market.name(), e);
     }
   }
 
@@ -174,7 +170,7 @@ public class KisMarketIndexWebSocketClient {
             parsed -> {
               marketIndexRedisService.save(parsed.market(), parsed.index());
               log.debug(
-                  "KIS market index message received. market={}, value={}",
+                  "한국투자증권 시장 지수 메시지 수신. market={}, value={}",
                   parsed.market().name(),
                   parsed.index().value());
             });
@@ -186,13 +182,13 @@ public class KisMarketIndexWebSocketClient {
       JsonNode header = root.path("header");
       JsonNode body = root.path("body");
       log.info(
-          "KIS market index WebSocket response. tr_id={}, tr_key={}, rt_cd={}, msg_cd={}",
+          "한국투자증권 시장 지수 웹소켓 응답. tr_id={}, tr_key={}, rt_cd={}, msg_cd={}",
           header.path("tr_id").asText(),
           header.path("tr_key").asText(),
           body.path("rt_cd").asText(),
           body.path("msg_cd").asText());
     } catch (JsonProcessingException e) {
-      log.debug("KIS market index WebSocket non-data message received");
+      log.debug("한국투자증권 시장 지수 웹소켓 비데이터 메시지를 수신했습니다.");
     }
   }
 
@@ -211,7 +207,7 @@ public class KisMarketIndexWebSocketClient {
 
     @Override
     public void onOpen(WebSocket socket) {
-      log.info("KIS market index WebSocket connected");
+      log.info("한국투자증권 시장 지수 웹소켓 연결 완료");
       WebSocket.Listener.super.onOpen(socket);
       for (MarketIndexMarket market : MarketIndexMarket.values()) {
         subscribe(socket, approvalKey, market);
@@ -231,14 +227,14 @@ public class KisMarketIndexWebSocketClient {
 
     @Override
     public CompletionStage<?> onClose(WebSocket socket, int statusCode, String reason) {
-      log.warn("KIS market index WebSocket closed. statusCode={}, reason={}", statusCode, reason);
+      log.warn("한국투자증권 시장 지수 웹소켓 연결 종료. statusCode={}, reason={}", statusCode, reason);
       scheduleReconnect();
       return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public void onError(WebSocket socket, Throwable error) {
-      log.warn("KIS market index WebSocket error", error);
+      log.warn("한국투자증권 시장 지수 웹소켓 오류가 발생했습니다.", error);
       scheduleReconnect();
     }
   }

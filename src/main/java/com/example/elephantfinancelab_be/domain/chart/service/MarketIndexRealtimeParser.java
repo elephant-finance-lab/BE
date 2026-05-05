@@ -46,13 +46,13 @@ public class MarketIndexRealtimeParser {
     }
 
     if ("1".equals(parts[0])) {
-      log.warn("Encrypted KIS realtime index message received. message skipped");
+      log.warn("암호화된 한국투자증권 실시간 지수 메시지는 처리하지 않습니다.");
       return List.of();
     }
 
     String[] fields = parts[3].split("\\^", -1);
     if (fields.length <= CHANGE_RATE_FIELD) {
-      log.warn("KIS realtime index message has insufficient field count. count={}", fields.length);
+      log.warn("한국투자증권 실시간 지수 메시지 필드 수가 부족합니다. count={}", fields.length);
       return List.of();
     }
 
@@ -61,10 +61,7 @@ public class MarketIndexRealtimeParser {
     for (int index = 0; index < dataCount; index++) {
       int offset = index * RESPONSE_FIELD_COUNT;
       if (fields.length <= offset + CHANGE_RATE_FIELD) {
-        log.warn(
-            "KIS realtime index message has insufficient field count for item. item={}, count={}",
-            index,
-            fields.length);
+        log.warn("한국투자증권 실시간 지수 메시지 항목 필드 수가 부족합니다. item={}, count={}", index, fields.length);
         break;
       }
 
@@ -102,7 +99,7 @@ public class MarketIndexRealtimeParser {
     try {
       return new BigDecimal(value.trim());
     } catch (NumberFormatException e) {
-      log.warn("Invalid decimal value in KIS realtime payload. value={}", value);
+      log.warn("한국투자증권 실시간 지수 메시지의 숫자 형식이 올바르지 않습니다. value={}", value);
       return BigDecimal.ZERO;
     }
   }

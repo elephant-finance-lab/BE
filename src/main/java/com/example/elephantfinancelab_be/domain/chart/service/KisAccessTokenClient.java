@@ -14,28 +14,41 @@ import java.time.Duration;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class KisApprovalKeyClient {
+public class KisAccessTokenClient {
 
-  private static final String APPROVAL_PATH = "/oauth2/Approval";
+  private static final String TOKEN_PATH = "/oauth2/tokenP";
+  private static final String TOKEN_REDIS_KEY = "kis:access-token";
+  private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
 
   private final KisProperties kisProperties;
   private final ObjectMapper objectMapper;
+  private final StringRedisTemplate stringRedisTemplate;
   private final HttpClient httpClient =
-      HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+      HttpClient.newBuilder().connectTimeout(REQUEST_TIMEOUT).build();
 
-  public String issueApprovalKey() {
+  public String getAccessToken() {
+    String cachedToken = stringRedisTemplate.opsForValue().get(TOKEN_REDIS_KEY);
+    if (cachedToken != null && !cachedToken.isBlank()) {
+      return cachedToken;
+    }
+
+    return issueAccessToken();
+  }
+
+  private String issueAccessToken() {
     try {
       HttpRequest request =
           HttpRequest.newBuilder()
-              .uri(approvalUri())
-              .timeout(Duration.ofSeconds(10))
-              .header("content-type", MediaType.APPLICATION_JSON_VALUE + "; utf-8")
+              .uri(tokenUri())
+              .timeout(REQUEST_TIMEOUT)
+              .header("content-type", MediaType.APPLICATION_JSON_VALUE + "; charset=utf-8")
               .POST(HttpRequest.BodyPublishers.ofString(requestBody()))
               .build();
 
@@ -45,32 +58,35 @@ public class KisApprovalKeyClient {
       if (response.statusCode() < 200 || response.statusCode() >= 300) {
         log.warn(
             "{} status={}",
-            ChartErrorCode.KIS_APPROVAL_KEY_FAILED.getMessage(),
+            ChartErrorCode.KIS_ACCESS_TOKEN_FAILED.getMessage(),
             response.statusCode());
-        throw new ChartException(ChartErrorCode.KIS_APPROVAL_KEY_FAILED);
+        throw new ChartException(ChartErrorCode.KIS_ACCESS_TOKEN_FAILED);
       }
 
       JsonNode root = objectMapper.readTree(response.body());
-      String approvalKey = root.path("approval_key").asText();
-      if (approvalKey == null || approvalKey.isBlank()) {
-        throw new ChartException(ChartErrorCode.KIS_APPROVAL_KEY_FAILED);
+      String accessToken = root.path("access_token").asText();
+      if (accessToken == null || accessToken.isBlank()) {
+        throw new ChartException(ChartErrorCode.KIS_ACCESS_TOKEN_FAILED);
       }
 
-      log.info("한국투자증권 웹소켓 접속키 발급 완료");
-      return approvalKey;
+      long expiresIn = root.path("expires_in").asLong(86_400);
+      Duration ttl = Duration.ofSeconds(Math.max(60, expiresIn - 60));
+      stringRedisTemplate.opsForValue().set(TOKEN_REDIS_KEY, accessToken, ttl);
+      log.info("한국투자증권 접근 토큰 발급 완료");
+      return accessToken;
     } catch (IOException e) {
-      throw new ChartException(ChartErrorCode.KIS_APPROVAL_KEY_FAILED, e);
+      throw new ChartException(ChartErrorCode.KIS_ACCESS_TOKEN_FAILED, e);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      throw new ChartException(ChartErrorCode.KIS_APPROVAL_KEY_FAILED, e);
+      throw new ChartException(ChartErrorCode.KIS_ACCESS_TOKEN_FAILED, e);
     }
   }
 
-  private URI approvalUri() {
+  private URI tokenUri() {
     String baseUrl = kisProperties.getBaseUrl();
     String normalizedBaseUrl =
         baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
-    return URI.create(normalizedBaseUrl + APPROVAL_PATH);
+    return URI.create(normalizedBaseUrl + TOKEN_PATH);
   }
 
   private String requestBody() throws IOException {
@@ -80,7 +96,7 @@ public class KisApprovalKeyClient {
             "client_credentials",
             "appkey",
             kisProperties.getAppKey(),
-            "secretkey",
+            "appsecret",
             kisProperties.getAppSecret()));
   }
 }
