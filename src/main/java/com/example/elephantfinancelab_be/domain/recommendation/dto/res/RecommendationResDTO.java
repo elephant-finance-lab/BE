@@ -1,4 +1,4 @@
-package com.example.elephantfinancelab_be.domain.recommendation.dto;
+package com.example.elephantfinancelab_be.domain.recommendation.dto.res;
 
 import java.util.List;
 import lombok.AllArgsConstructor;
@@ -6,7 +6,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-public class RecommendationResponseDTO {
+public class RecommendationResDTO {
 
   @Builder
   @Getter
@@ -65,7 +65,6 @@ public class RecommendationResponseDTO {
     private String risk;
   }
 
-  // --- 추천 종목 선택 저장 응답 ---
   @Builder
   @Getter
   @NoArgsConstructor
@@ -75,7 +74,6 @@ public class RecommendationResponseDTO {
     private List<Long> recommendationIds;
   }
 
-  // --- 매수 비중 옵션 저장 응답 ---
   @Builder
   @Getter
   @NoArgsConstructor

@@ -1,6 +1,6 @@
 package com.example.elephantfinancelab_be.domain.recommendation.converter;
 
-import com.example.elephantfinancelab_be.domain.recommendation.dto.RecommendationResponseDTO;
+import com.example.elephantfinancelab_be.domain.recommendation.dto.res.RecommendationResDTO;
 import com.example.elephantfinancelab_be.domain.recommendation.entity.Recommendation;
 import java.util.List;
 import lombok.AccessLevel;
@@ -9,17 +9,17 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class RecommendationConverter {
 
-  public static RecommendationResponseDTO.RecommendationListDTO toRecommendationListDTO(
-      String profile, List<RecommendationResponseDTO.RecommendationInfoDTO> infoList) {
-    return RecommendationResponseDTO.RecommendationListDTO.builder()
+  public static RecommendationResDTO.RecommendationListDTO toRecommendationListDTO(
+      String profile, List<RecommendationResDTO.RecommendationInfoDTO> infoList) {
+    return RecommendationResDTO.RecommendationListDTO.builder()
         .userProfileSummary(profile)
         .recommendations(infoList)
         .build();
   }
 
-  public static RecommendationResponseDTO.RecommendationInfoDTO toRecommendationInfoDTO(
+  public static RecommendationResDTO.RecommendationInfoDTO toRecommendationInfoDTO(
       Recommendation entity) {
-    return RecommendationResponseDTO.RecommendationInfoDTO.builder()
+    return RecommendationResDTO.RecommendationInfoDTO.builder()
         .rank(entity.getRanking())
         .tickerCode(entity.getTickerCode())
         .companyName(entity.getCompanyName())
@@ -38,9 +38,9 @@ public final class RecommendationConverter {
         .build();
   }
 
-  public static RecommendationResponseDTO.RecommendationDetailDTO toRecommendationDetailDTO(
+  public static RecommendationResDTO.RecommendationDetailDTO toRecommendationDetailDTO(
       Recommendation entity, String profile) {
-    return RecommendationResponseDTO.RecommendationDetailDTO.builder()
+    return RecommendationResDTO.RecommendationDetailDTO.builder()
         .recommendationId(entity.getId())
         .tickerCode(entity.getTickerCode())
         .companyName(entity.getCompanyName())
@@ -52,7 +52,7 @@ public final class RecommendationConverter {
         .rank(entity.getRanking())
         .score(entity.getScore())
         .sections(
-            RecommendationResponseDTO.DetailSectionsDTO.builder()
+            RecommendationResDTO.DetailSectionsDTO.builder()
                 .recommendReason(entity.getRecommendReason())
                 .companySummary(entity.getCompanySummary())
                 .growthPoint(entity.getGrowthPoint())
