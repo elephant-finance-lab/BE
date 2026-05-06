@@ -2,6 +2,8 @@ package com.example.elephantfinancelab_be.domain.chart.service;
 
 import com.example.elephantfinancelab_be.domain.chart.dto.res.MarketIndexResDTO;
 import com.example.elephantfinancelab_be.domain.chart.entity.MarketIndexMarket;
+import com.example.elephantfinancelab_be.domain.chart.exception.ChartException;
+import com.example.elephantfinancelab_be.domain.chart.exception.code.ChartErrorCode;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +22,7 @@ public class MarketIndexRedisService {
       String json = objectMapper.writeValueAsString(index);
       stringRedisTemplate.opsForValue().set(market.getRedisKey(), json);
     } catch (JsonProcessingException e) {
-      throw new IllegalStateException("Failed to serialize market index", e);
+      throw new ChartException(ChartErrorCode.MARKET_INDEX_CACHE_SERIALIZE_FAILED, e);
     }
   }
 
@@ -38,7 +40,7 @@ public class MarketIndexRedisService {
     try {
       return objectMapper.readValue(json, MarketIndexResDTO.MarketIndex.class);
     } catch (JsonProcessingException e) {
-      throw new IllegalStateException("Failed to deserialize market index", e);
+      throw new ChartException(ChartErrorCode.MARKET_INDEX_CACHE_DESERIALIZE_FAILED, e);
     }
   }
 }

@@ -3,6 +3,7 @@ package com.example.elephantfinancelab_be.domain.chart.service;
 import com.example.elephantfinancelab_be.domain.chart.dto.res.MarketIndexResDTO;
 import com.example.elephantfinancelab_be.domain.chart.entity.MarketIndexMarket;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -23,6 +24,7 @@ public class MarketIndexRealtimeParser {
 
   private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
   private static final DateTimeFormatter KIS_TIME_FORMATTER = DateTimeFormatter.ofPattern("HHmmss");
+  private static final Duration FUTURE_TIMESTAMP_TOLERANCE = Duration.ofHours(1);
   private static final int INDEX_CODE_FIELD = 0;
   private static final int TRADE_TIME_FIELD = 1;
   private static final int CURRENT_VALUE_FIELD = 2;
@@ -46,13 +48,13 @@ public class MarketIndexRealtimeParser {
     }
 
     if ("1".equals(parts[0])) {
-      log.warn("Encrypted KIS realtime index message received. message skipped");
+      log.warn("암호화된 한국투자증권 실시간 지수 메시지는 처리하지 않습니다.");
       return List.of();
     }
 
     String[] fields = parts[3].split("\\^", -1);
     if (fields.length <= CHANGE_RATE_FIELD) {
-      log.warn("KIS realtime index message has insufficient field count. count={}", fields.length);
+      log.warn("한국투자증권 실시간 지수 메시지 필드 수가 부족합니다. count={}", fields.length);
       return List.of();
     }
 
@@ -61,10 +63,7 @@ public class MarketIndexRealtimeParser {
     for (int index = 0; index < dataCount; index++) {
       int offset = index * RESPONSE_FIELD_COUNT;
       if (fields.length <= offset + CHANGE_RATE_FIELD) {
-        log.warn(
-            "KIS realtime index message has insufficient field count for item. item={}, count={}",
-            index,
-            fields.length);
+        log.warn("한국투자증권 실시간 지수 메시지 항목 필드 수가 부족합니다. item={}, count={}", index, fields.length);
         break;
       }
 
@@ -102,7 +101,7 @@ public class MarketIndexRealtimeParser {
     try {
       return new BigDecimal(value.trim());
     } catch (NumberFormatException e) {
-      log.warn("Invalid decimal value in KIS realtime payload. value={}", value);
+      log.warn("한국투자증권 실시간 지수 메시지의 숫자 형식이 올바르지 않습니다. value={}", value);
       return BigDecimal.ZERO;
     }
   }
@@ -126,7 +125,13 @@ public class MarketIndexRealtimeParser {
     }
 
     try {
-      return LocalDateTime.of(today, LocalTime.parse(kisTime, KIS_TIME_FORMATTER));
+      LocalDateTime now = LocalDateTime.now(KOREA_ZONE).withNano(0);
+      LocalDateTime timestamp =
+          LocalDateTime.of(today, LocalTime.parse(kisTime, KIS_TIME_FORMATTER));
+      if (timestamp.isAfter(now.plus(FUTURE_TIMESTAMP_TOLERANCE))) {
+        return timestamp.minusDays(1);
+      }
+      return timestamp;
     } catch (DateTimeParseException e) {
       return LocalDateTime.now(KOREA_ZONE).withNano(0);
     }
