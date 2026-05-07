@@ -4,6 +4,10 @@ import com.example.elephantfinancelab_be.domain.recommendation.converter.Recomme
 import com.example.elephantfinancelab_be.domain.recommendation.dto.res.RecommendationResDTO;
 import com.example.elephantfinancelab_be.domain.recommendation.entity.Recommendation;
 import com.example.elephantfinancelab_be.domain.recommendation.repository.RecommendationRepository;
+import com.example.elephantfinancelab_be.domain.user.entity.User;
+import com.example.elephantfinancelab_be.domain.user.exception.UserException;
+import com.example.elephantfinancelab_be.domain.user.exception.code.UserErrorCode;
+import com.example.elephantfinancelab_be.domain.user.repository.UserRepository;
 import com.example.elephantfinancelab_be.global.apiPayload.code.StockErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.GeneralException;
 import java.util.List;
@@ -17,10 +21,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class RecommendationQueryServiceImpl implements RecommendationQueryService {
 
   private final RecommendationRepository recommendationRepository;
+  private final UserRepository userRepository;
 
   @Override
   public RecommendationResDTO.RecommendationListDTO findRecommendationList() {
-    List<Recommendation> recommendations = recommendationRepository.findAllByOrderByRankingAsc();
+    List<Recommendation> recommendations = recommendationRepository.findAll();
     List<RecommendationResDTO.RecommendationInfoDTO> infoList =
         recommendations.stream().map(RecommendationConverter::toRecommendationInfoDTO).toList();
     return RecommendationConverter.toRecommendationListDTO("사용자 맞춤 투자 추천 리스트", infoList);
@@ -33,5 +38,14 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
             .findByTickerCodeIgnoreCase(stockCode.trim())
             .orElseThrow(() -> new GeneralException(StockErrorCode.STOCK_NOT_FOUND));
     return RecommendationConverter.toRecommendationDetailDTO(recommendation, "맞춤형 투자 전략 분석");
+  }
+
+  @Override
+  public Long findUserIdByEmail(String email) {
+    User user =
+        userRepository
+            .findByEmail(email)
+            .orElseThrow(() -> new UserException(UserErrorCode.USER_NOT_FOUND));
+    return user.getId();
   }
 }

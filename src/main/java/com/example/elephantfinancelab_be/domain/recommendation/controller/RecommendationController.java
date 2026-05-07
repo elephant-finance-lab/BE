@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @Tag(name = "Recommendation", description = "종목 추천 API")
@@ -46,9 +47,11 @@ public class RecommendationController {
   @PostMapping("/select")
   public ResponseEntity<ApiResponse<RecommendationResDTO.RecommendationSelectDTO>>
       createSelectedRecommendations(
+          @AuthenticationPrincipal String email,
           @Valid @RequestBody RecommendationReqDTO.SelectRecommendationDTO request) {
+    Long userId = recommendationQueryService.findUserIdByEmail(email);
     RecommendationResDTO.RecommendationSelectDTO result =
-        recommendationCommandService.saveSelectedRecommendations(request);
+        recommendationCommandService.saveSelectedRecommendations(userId, request);
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
         .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }

@@ -2,10 +2,13 @@ package com.example.elephantfinancelab_be.domain.recommendation.service.command;
 
 import com.example.elephantfinancelab_be.domain.recommendation.dto.req.RecommendationReqDTO;
 import com.example.elephantfinancelab_be.domain.recommendation.dto.res.RecommendationResDTO;
+import com.example.elephantfinancelab_be.domain.recommendation.entity.Recommendation;
+import com.example.elephantfinancelab_be.domain.recommendation.entity.UserSelectedRecommendation;
 import com.example.elephantfinancelab_be.domain.recommendation.exception.code.RecommendationErrorCode;
+import com.example.elephantfinancelab_be.domain.recommendation.repository.RecommendationRepository;
+import com.example.elephantfinancelab_be.domain.recommendation.repository.UserSelectedRecommendationRepository;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.GeneralException;
 import java.util.List;
-import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,9 +18,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class RecommendationCommandServiceImpl implements RecommendationCommandService {
 
+  private final RecommendationRepository recommendationRepository;
+  private final UserSelectedRecommendationRepository userSelectedRecommendationRepository;
+
   @Override
   public RecommendationResDTO.RecommendationSelectDTO saveSelectedRecommendations(
-      RecommendationReqDTO.SelectRecommendationDTO request) {
+      Long userId, RecommendationReqDTO.SelectRecommendationDTO request) {
 
     if (request == null || request.getSelectedRecommendations() == null) {
       throw new GeneralException(RecommendationErrorCode.NO_SELECTED_RECOMMENDATION);
@@ -25,16 +31,27 @@ public class RecommendationCommandServiceImpl implements RecommendationCommandSe
 
     List<Long> ids =
         request.getSelectedRecommendations().stream()
-            .filter(Objects::nonNull)
             .map(RecommendationReqDTO.RecommendationIdDTO::getRecommendationId)
-            .filter(Objects::nonNull)
             .toList();
 
     if (ids.isEmpty()) {
       throw new GeneralException(RecommendationErrorCode.NO_SELECTED_RECOMMENDATION);
     }
 
-    // TODO: 실제 저장 로직 구현 시 여기에 repository.saveAll() 추가
+    List<Recommendation> recommendations = recommendationRepository.findAllById(ids);
+
+    List<UserSelectedRecommendation> entities =
+        recommendations.stream()
+            .map(
+                recommendation ->
+                    UserSelectedRecommendation.builder()
+                        .userId(userId)
+                        .recommendation(recommendation)
+                        .build())
+            .toList();
+
+    userSelectedRecommendationRepository.saveAll(entities);
+
     return RecommendationResDTO.RecommendationSelectDTO.builder()
         .selectedCount(ids.size())
         .recommendationIds(ids)
@@ -44,9 +61,6 @@ public class RecommendationCommandServiceImpl implements RecommendationCommandSe
   @Override
   public RecommendationResDTO.PurchaseOptionDTO savePurchaseOption(
       RecommendationReqDTO.PurchaseOptionRequestDTO request) {
-
-    // TODO: 실제 선행 선택 여부 검증 로직 추가
-    // TODO: DB 연동 시 optionId로 실제 데이터 조회
 
     return switch (request.getOptionId()) {
       case 1 ->
