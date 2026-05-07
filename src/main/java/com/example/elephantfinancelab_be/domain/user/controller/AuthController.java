@@ -25,7 +25,7 @@ public class AuthController {
   @Operation(summary = "내 정보 조회", description = "토큰 기반으로 현재 로그인한 사용자 정보를 조회합니다.")
   @GetMapping("/me")
   public ResponseEntity<ApiResponse<UserResDTO.MeRes>> getMe(
-      @AuthenticationPrincipal String userId, @RequestParam(required = false) String token) {
+      @AuthenticationPrincipal String email, @RequestParam(required = false) String token) {
 
     if (token != null) {
       if (!jwtProvider.validateToken(token)) {
@@ -38,13 +38,13 @@ public class AuthController {
               ApiResponse.of(GeneralSuccessCode.OK, UserConverter.toMeRes(userIdFromToken, token)));
     }
 
-    if (userId == null) {
+    if (email == null) {
       return ResponseEntity.status(AuthErrorCode.TOKEN_MISSING_OR_EXPIRED.getStatus())
           .body(ApiResponse.onFailure(AuthErrorCode.TOKEN_MISSING_OR_EXPIRED, null));
     }
 
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
-        .body(ApiResponse.of(GeneralSuccessCode.OK, UserConverter.toMeRes(userId)));
+        .body(ApiResponse.of(GeneralSuccessCode.OK, UserConverter.toMeRes(email)));
   }
 
   @Operation(summary = "토큰 재발급", description = "리프레시 토큰으로 액세스 토큰을 재발급합니다.")

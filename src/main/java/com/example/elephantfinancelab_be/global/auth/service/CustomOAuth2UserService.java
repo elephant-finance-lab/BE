@@ -33,7 +33,10 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
           case "kakao" -> new KakaoUserInfo(oAuth2User.getAttributes());
           default -> throw new OAuth2AuthenticationException("허용되지 않은 소셜 로그인입니다.");
         };
-
+    String email = userInfo.getEmail();
+    if (email == null || email.isBlank()) {
+      throw new OAuth2AuthenticationException("이메일 정보를 가져올 수 없습니다.");
+    }
     userRepository
         .findByEmail(userInfo.getEmail())
         .orElseGet(
