@@ -2,7 +2,7 @@ package com.example.elephantfinancelab_be.domain.recommendation.service.command;
 
 import com.example.elephantfinancelab_be.domain.recommendation.dto.req.RecommendationReqDTO;
 import com.example.elephantfinancelab_be.domain.recommendation.dto.res.RecommendationResDTO;
-import com.example.elephantfinancelab_be.global.apiPayload.code.RecommendationErrorCode;
+import com.example.elephantfinancelab_be.domain.recommendation.exception.code.RecommendationErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.GeneralException;
 import java.util.List;
 import java.util.Objects;

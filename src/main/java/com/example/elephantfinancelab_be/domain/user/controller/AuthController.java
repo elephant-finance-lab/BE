@@ -76,4 +76,34 @@ public class AuthController {
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
         .body(ApiResponse.of(GeneralSuccessCode.OK, UserConverter.toTokenRes(newAccessToken)));
   }
+
+  @Operation(
+      summary = "구글 로그인",
+      description =
+          "구글 소셜 로그인 페이지로 리다이렉트합니다. 브라우저에서 직접 접속하세요: http://localhost:8080/oauth2/authorization/google")
+  @GetMapping("/login/google")
+  public ResponseEntity<ApiResponse<Void>> loginGoogle() {
+    return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
+        .body(ApiResponse.of(GeneralSuccessCode.OK));
+  }
+
+  @Operation(
+      summary = "네이버 로그인",
+      description =
+          "네이버 소셜 로그인 페이지로 리다이렉트합니다. 브라우저에서 직접 접속하세요: http://localhost:8080/oauth2/authorization/naver")
+  @GetMapping("/login/naver")
+  public ResponseEntity<ApiResponse<Void>> loginNaver() {
+    return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
+        .body(ApiResponse.of(GeneralSuccessCode.OK));
+  }
+
+  @Operation(
+      summary = "카카오 로그인",
+      description =
+          "카카오 소셜 로그인 페이지로 리다이렉트합니다. 브라우저에서 직접 접속하세요: http://localhost:8080/oauth2/authorization/kakao")
+  @GetMapping("/login/kakao")
+  public ResponseEntity<ApiResponse<Void>> loginKakao() {
+    return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
+        .body(ApiResponse.of(GeneralSuccessCode.OK));
+  }
 }
