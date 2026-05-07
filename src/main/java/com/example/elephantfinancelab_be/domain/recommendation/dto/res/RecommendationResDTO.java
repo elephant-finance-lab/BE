@@ -65,7 +65,6 @@ public class RecommendationResDTO {
     private String risk;
   }
 
-  // --- 추천 종목 선택 저장 응답 ---
   @Builder
   @Getter
   @NoArgsConstructor
@@ -75,7 +74,6 @@ public class RecommendationResDTO {
     private List<Long> recommendationIds;
   }
 
-  // --- 매수 비중 옵션 저장 응답 ---
   @Builder
   @Getter
   @NoArgsConstructor
