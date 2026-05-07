@@ -8,5 +8,5 @@ public interface RecommendationCommandService {
       Long userId, RecommendationReqDTO.SelectRecommendationDTO request);
 
   RecommendationResDTO.PurchaseOptionDTO savePurchaseOption(
-      RecommendationReqDTO.PurchaseOptionRequestDTO request);
+      Long userId, RecommendationReqDTO.PurchaseOptionRequestDTO request);
 }

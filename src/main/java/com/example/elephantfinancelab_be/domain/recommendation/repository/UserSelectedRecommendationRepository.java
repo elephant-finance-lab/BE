@@ -4,4 +4,6 @@ import com.example.elephantfinancelab_be.domain.recommendation.entity.UserSelect
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface UserSelectedRecommendationRepository
-    extends JpaRepository<UserSelectedRecommendation, Long> {}
+    extends JpaRepository<UserSelectedRecommendation, Long> {
+  boolean existsByUserId(Long userId);
+}

@@ -60,7 +60,11 @@ public class RecommendationCommandServiceImpl implements RecommendationCommandSe
 
   @Override
   public RecommendationResDTO.PurchaseOptionDTO savePurchaseOption(
-      RecommendationReqDTO.PurchaseOptionRequestDTO request) {
+      Long userId, RecommendationReqDTO.PurchaseOptionRequestDTO request) {
+
+    if (!userSelectedRecommendationRepository.existsByUserId(userId)) {
+      throw new GeneralException(RecommendationErrorCode.NO_PRIOR_SELECTION);
+    }
 
     return switch (request.getOptionId()) {
       case 1 ->

@@ -59,9 +59,11 @@ public class RecommendationController {
   @Operation(summary = "매수 비중 옵션 저장", description = "사용자가 선택한 매수 비중 옵션을 저장합니다.")
   @PostMapping("/purchase")
   public ResponseEntity<ApiResponse<RecommendationResDTO.PurchaseOptionDTO>> createPurchaseOption(
+      @AuthenticationPrincipal String email,
       @Valid @RequestBody RecommendationReqDTO.PurchaseOptionRequestDTO request) {
+    Long userId = recommendationQueryService.findUserIdByEmail(email);
     RecommendationResDTO.PurchaseOptionDTO result =
-        recommendationCommandService.savePurchaseOption(request);
+        recommendationCommandService.savePurchaseOption(userId, request);
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
         .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }
