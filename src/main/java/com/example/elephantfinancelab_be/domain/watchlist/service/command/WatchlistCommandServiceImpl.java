@@ -10,6 +10,7 @@ import com.example.elephantfinancelab_be.domain.watchlist.exception.code.Watchli
 import com.example.elephantfinancelab_be.domain.watchlist.repository.WatchlistGroupRepository;
 import com.example.elephantfinancelab_be.domain.watchlist.repository.WatchlistItemRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +26,8 @@ public class WatchlistCommandServiceImpl implements WatchlistCommandService {
   @Override
   public void saveGroup(Long userId, WatchlistReqDTO.CreateGroup request) {
     User user = userRepository.getReferenceById(userId);
+    WatchlistGroup group = WatchlistGroup.builder().user(user).name(request.getName()).build();
+    watchlistGroupRepository.save(group);
   }
 
   @Override
@@ -46,16 +49,21 @@ public class WatchlistCommandServiceImpl implements WatchlistCommandService {
       throw new WatchlistException(WatchlistErrorCode.WATCHLIST_ITEM_ALREADY_EXISTS);
     }
     WatchlistItem item = WatchlistItem.builder().group(group).ticker(request.getTicker()).build();
-    watchlistItemRepository.save(item);
+    try {
+      watchlistItemRepository.save(item);
+    } catch (DataIntegrityViolationException e) {
+      throw new WatchlistException(WatchlistErrorCode.WATCHLIST_ITEM_ALREADY_EXISTS);
+    }
   }
 
   @Override
   public void deleteItem(Long userId, WatchlistReqDTO.RemoveItem request) {
     WatchlistGroup group = findGroupWithAuth(userId, request.getGroupId());
-    if (!watchlistItemRepository.existsByGroup_IdAndTicker(group.getId(), request.getTicker())) {
+    long deleted =
+        watchlistItemRepository.deleteByGroup_IdAndTicker(group.getId(), request.getTicker());
+    if (deleted == 0) {
       throw new WatchlistException(WatchlistErrorCode.WATCHLIST_ITEM_NOT_FOUND);
     }
-    watchlistItemRepository.deleteByGroup_IdAndTicker(group.getId(), request.getTicker());
   }
 
   private WatchlistGroup findGroupWithAuth(Long userId, Long groupId) {
