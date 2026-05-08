@@ -6,9 +6,11 @@ import com.example.elephantfinancelab_be.domain.user.exception.code.UserErrorCod
 import com.example.elephantfinancelab_be.domain.user.repository.UserRepository;
 import com.example.elephantfinancelab_be.domain.watchlist.dto.req.WatchlistReqDTO;
 import com.example.elephantfinancelab_be.domain.watchlist.entity.WatchlistGroup;
+import com.example.elephantfinancelab_be.domain.watchlist.entity.WatchlistItem;
 import com.example.elephantfinancelab_be.domain.watchlist.exception.WatchlistException;
 import com.example.elephantfinancelab_be.domain.watchlist.exception.code.WatchlistErrorCode;
 import com.example.elephantfinancelab_be.domain.watchlist.repository.WatchlistGroupRepository;
+import com.example.elephantfinancelab_be.domain.watchlist.repository.WatchlistItemRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +22,7 @@ public class WatchlistCommandServiceImpl implements WatchlistCommandService {
 
   private final UserRepository userRepository;
   private final WatchlistGroupRepository watchlistGroupRepository;
+  private final WatchlistItemRepository watchlistItemRepository;
 
   @Override
   public void saveGroup(Long userId, WatchlistReqDTO.CreateGroup request) {
@@ -41,6 +44,25 @@ public class WatchlistCommandServiceImpl implements WatchlistCommandService {
   public void deleteGroup(Long userId, Long groupId) {
     WatchlistGroup group = findGroupWithAuth(userId, groupId);
     watchlistGroupRepository.delete(group);
+  }
+
+  @Override
+  public void saveItem(Long userId, WatchlistReqDTO.AddItem request) {
+    WatchlistGroup group = findGroupWithAuth(userId, request.getGroupId());
+    if (watchlistItemRepository.existsByGroup_IdAndTicker(group.getId(), request.getTicker())) {
+      throw new WatchlistException(WatchlistErrorCode.WATCHLIST_ITEM_ALREADY_EXISTS);
+    }
+    WatchlistItem item = WatchlistItem.builder().group(group).ticker(request.getTicker()).build();
+    watchlistItemRepository.save(item);
+  }
+
+  @Override
+  public void deleteItem(Long userId, WatchlistReqDTO.RemoveItem request) {
+    WatchlistGroup group = findGroupWithAuth(userId, request.getGroupId());
+    if (!watchlistItemRepository.existsByGroup_IdAndTicker(group.getId(), request.getTicker())) {
+      throw new WatchlistException(WatchlistErrorCode.WATCHLIST_ITEM_NOT_FOUND);
+    }
+    watchlistItemRepository.deleteByGroup_IdAndTicker(group.getId(), request.getTicker());
   }
 
   private WatchlistGroup findGroupWithAuth(Long userId, Long groupId) {
