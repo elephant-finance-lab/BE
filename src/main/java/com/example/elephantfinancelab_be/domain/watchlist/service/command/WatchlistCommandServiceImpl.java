@@ -1,8 +1,6 @@
 package com.example.elephantfinancelab_be.domain.watchlist.service.command;
 
 import com.example.elephantfinancelab_be.domain.user.entity.User;
-import com.example.elephantfinancelab_be.domain.user.exception.UserException;
-import com.example.elephantfinancelab_be.domain.user.exception.code.UserErrorCode;
 import com.example.elephantfinancelab_be.domain.user.repository.UserRepository;
 import com.example.elephantfinancelab_be.domain.watchlist.dto.req.WatchlistReqDTO;
 import com.example.elephantfinancelab_be.domain.watchlist.entity.WatchlistGroup;

@@ -23,8 +23,8 @@ public class WatchlistReqDTO {
 
   @Getter
   public static class AddItem {
-    @NotNull
-    private Long groupId;
+    @NotNull private Long groupId;
+
     @NotBlank
     @Size(max = 20)
     private String ticker;
@@ -32,8 +32,8 @@ public class WatchlistReqDTO {
 
   @Getter
   public static class RemoveItem {
-    @NotNull
-    private Long groupId;
+    @NotNull private Long groupId;
+
     @NotBlank
     @Size(max = 20)
     private String ticker;
