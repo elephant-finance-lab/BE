@@ -27,7 +27,7 @@ public final class RecommendationConverter {
         .currentPrice(entity.getCurrentPrice())
         .changeRate(entity.getChangeRate())
         .currency(entity.getCurrency())
-        .isSelected(true)
+        .isSelected(false)
         .reason(
             entity.getRecommendReason() == null
                 ? ""

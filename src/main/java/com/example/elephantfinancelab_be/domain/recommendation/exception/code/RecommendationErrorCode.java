@@ -1,5 +1,6 @@
-package com.example.elephantfinancelab_be.global.apiPayload.code;
+package com.example.elephantfinancelab_be.domain.recommendation.exception.code;
 
+import com.example.elephantfinancelab_be.global.apiPayload.code.BaseErrorCode;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import org.springframework.http.HttpStatus;
