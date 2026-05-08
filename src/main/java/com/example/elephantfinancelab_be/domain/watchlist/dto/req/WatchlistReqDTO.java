@@ -23,13 +23,19 @@ public class WatchlistReqDTO {
 
   @Getter
   public static class AddItem {
-    @NotNull private Long groupId;
-    @NotBlank private String ticker;
+    @NotNull
+    private Long groupId;
+    @NotBlank
+    @Size(max = 20)
+    private String ticker;
   }
 
   @Getter
   public static class RemoveItem {
-    @NotNull private Long groupId;
-    @NotBlank private String ticker;
+    @NotNull
+    private Long groupId;
+    @NotBlank
+    @Size(max = 20)
+    private String ticker;
   }
 }

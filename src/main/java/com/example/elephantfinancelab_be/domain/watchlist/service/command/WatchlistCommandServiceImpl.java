@@ -26,12 +26,7 @@ public class WatchlistCommandServiceImpl implements WatchlistCommandService {
 
   @Override
   public void saveGroup(Long userId, WatchlistReqDTO.CreateGroup request) {
-    User user =
-        userRepository
-            .findById(userId)
-            .orElseThrow(() -> new UserException(UserErrorCode.USER_NOT_FOUND));
-    WatchlistGroup group = WatchlistGroup.builder().user(user).name(request.getName()).build();
-    watchlistGroupRepository.save(group);
+    User user = userRepository.getReferenceById(userId);
   }
 
   @Override
