@@ -51,4 +51,13 @@ public class WatchlistController {
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
         .body(ApiResponse.of(GeneralSuccessCode.OK, null));
   }
+
+  @Operation(summary = "관심그룹 제거", description = "관심그룹을 삭제합니다.")
+  @DeleteMapping("/groups/{groupId}")
+  public ResponseEntity<ApiResponse<Void>> deleteGroup(@PathVariable Long groupId) {
+    Long userId = 1L;
+    watchlistCommandService.deleteGroup(userId, groupId);
+    return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
+        .body(ApiResponse.of(GeneralSuccessCode.OK, null));
+  }
 }

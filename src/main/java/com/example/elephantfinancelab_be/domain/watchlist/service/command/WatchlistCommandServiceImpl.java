@@ -9,7 +9,6 @@ import com.example.elephantfinancelab_be.domain.watchlist.entity.WatchlistGroup;
 import com.example.elephantfinancelab_be.domain.watchlist.exception.WatchlistException;
 import com.example.elephantfinancelab_be.domain.watchlist.exception.code.WatchlistErrorCode;
 import com.example.elephantfinancelab_be.domain.watchlist.repository.WatchlistGroupRepository;
-import com.example.elephantfinancelab_be.domain.watchlist.repository.WatchlistItemRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,7 +20,6 @@ public class WatchlistCommandServiceImpl implements WatchlistCommandService {
 
   private final UserRepository userRepository;
   private final WatchlistGroupRepository watchlistGroupRepository;
-  private final WatchlistItemRepository watchlistItemRepository;
 
   @Override
   public void saveGroup(Long userId, WatchlistReqDTO.CreateGroup request) {
