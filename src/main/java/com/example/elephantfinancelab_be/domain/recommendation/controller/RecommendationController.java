@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @Tag(name = "Recommendation", description = "종목 추천 API")
@@ -46,9 +47,11 @@ public class RecommendationController {
   @PostMapping("/select")
   public ResponseEntity<ApiResponse<RecommendationResDTO.RecommendationSelectDTO>>
       createSelectedRecommendations(
+          @AuthenticationPrincipal String email,
           @Valid @RequestBody RecommendationReqDTO.SelectRecommendationDTO request) {
+    Long userId = recommendationQueryService.findUserIdByEmail(email);
     RecommendationResDTO.RecommendationSelectDTO result =
-        recommendationCommandService.saveSelectedRecommendations(request);
+        recommendationCommandService.saveSelectedRecommendations(userId, request);
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
         .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }
@@ -56,9 +59,11 @@ public class RecommendationController {
   @Operation(summary = "매수 비중 옵션 저장", description = "사용자가 선택한 매수 비중 옵션을 저장합니다.")
   @PostMapping("/purchase")
   public ResponseEntity<ApiResponse<RecommendationResDTO.PurchaseOptionDTO>> createPurchaseOption(
+      @AuthenticationPrincipal String email,
       @Valid @RequestBody RecommendationReqDTO.PurchaseOptionRequestDTO request) {
+    Long userId = recommendationQueryService.findUserIdByEmail(email);
     RecommendationResDTO.PurchaseOptionDTO result =
-        recommendationCommandService.savePurchaseOption(request);
+        recommendationCommandService.savePurchaseOption(userId, request);
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
         .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }

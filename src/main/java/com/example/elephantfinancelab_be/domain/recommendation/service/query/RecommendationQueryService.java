@@ -6,4 +6,6 @@ public interface RecommendationQueryService {
   RecommendationResDTO.RecommendationListDTO findRecommendationList();
 
   RecommendationResDTO.RecommendationDetailDTO findRecommendationDetail(String stockCode);
+
+  Long findUserIdByEmail(String email);
 }
