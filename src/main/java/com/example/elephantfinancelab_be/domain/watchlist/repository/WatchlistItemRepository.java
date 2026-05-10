@@ -10,5 +10,5 @@ public interface WatchlistItemRepository extends JpaRepository<WatchlistItem, Lo
 
   boolean existsByGroup_IdAndTicker(Long groupId, String ticker);
 
-  void deleteByGroup_IdAndTicker(Long groupId, String ticker);
+  long deleteByGroup_IdAndTicker(Long groupId, String ticker);
 }

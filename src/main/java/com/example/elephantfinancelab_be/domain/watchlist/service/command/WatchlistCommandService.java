@@ -9,4 +9,8 @@ public interface WatchlistCommandService {
   void updateGroup(Long userId, Long groupId, WatchlistReqDTO.UpdateGroup request);
 
   void deleteGroup(Long userId, Long groupId);
+
+  void saveItem(Long userId, WatchlistReqDTO.AddItem request);
+
+  void deleteItem(Long userId, WatchlistReqDTO.RemoveItem request);
 }
