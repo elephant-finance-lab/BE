@@ -1,6 +1,8 @@
 package com.example.elephantfinancelab_be.domain.user.dto.res;
 
+import com.example.elephantfinancelab_be.domain.user.entity.AccountType;
 import com.example.elephantfinancelab_be.domain.user.entity.Gender;
+import java.time.LocalDateTime;
 import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -36,5 +38,29 @@ public class UserResDTO {
   @Builder
   public static class TokenRes {
     private String accessToken;
+  }
+
+  @Getter
+  @NoArgsConstructor
+  @AllArgsConstructor
+  @Builder
+  public static class AccountInfo {
+    private Long accountId;
+    private String bankName;
+    private String accountNumber;
+    private String accountHolder;
+    private AccountType accountType;
+    private boolean isPrimary;
+    private boolean isHidden;
+    private Long balance;
+    private LocalDateTime linkedAt;
+  }
+
+  @Getter
+  @NoArgsConstructor
+  @AllArgsConstructor
+  @Builder
+  public static class AccountId {
+    private Long accountId;
   }
 }
