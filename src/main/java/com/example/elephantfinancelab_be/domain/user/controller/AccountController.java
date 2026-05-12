@@ -56,7 +56,7 @@ public class AccountController {
   }
 
   @Operation(summary = "계좌 삭제", description = "계좌를 삭제합니다.")
-  @DeleteMapping("/accounts/{accountId}")
+  @DeleteMapping("/users/accounts/{accountId}")
   public ResponseEntity<ApiResponse<Void>> deleteAccount(
       @AuthenticationPrincipal String email, @PathVariable Long accountId) {
     accountCommandService.deleteAccount(resolveUserId(email), accountId);

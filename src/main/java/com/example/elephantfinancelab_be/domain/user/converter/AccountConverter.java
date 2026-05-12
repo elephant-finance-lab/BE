@@ -28,8 +28,8 @@ public final class AccountConverter {
         .accountNumber(account.getAccountNumber())
         .accountHolder(account.getAccountHolder())
         .accountType(account.getAccountType())
-        .isPrimary(account.isPrimary())
-        .isHidden(account.isHidden())
+        .primary(account.isPrimary())
+        .hidden(account.isHidden())
         .balance(account.getBalance())
         .linkedAt(account.getCreatedAt())
         .build();

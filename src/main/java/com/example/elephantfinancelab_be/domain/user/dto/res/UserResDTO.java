@@ -50,8 +50,8 @@ public class UserResDTO {
     private String accountNumber;
     private String accountHolder;
     private AccountType accountType;
-    private boolean isPrimary;
-    private boolean isHidden;
+    private boolean primary;
+    private boolean hidden;
     private Long balance;
     private LocalDateTime linkedAt;
   }

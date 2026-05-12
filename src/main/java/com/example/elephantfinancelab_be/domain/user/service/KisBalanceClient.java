@@ -95,7 +95,17 @@ public class KisBalanceClient {
 
     HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
+    if (response.statusCode() < 200 || response.statusCode() >= 300) {
+      throw new IllegalStateException("KIS token request failed. status=" + response.statusCode());
+    }
+
     JsonNode root = objectMapper.readTree(response.body());
-    return root.path("access_token").asText();
+    String token = root.path("access_token").asText();
+
+    if (token == null || token.isBlank()) {
+      throw new IllegalStateException("KIS token response does not contain access_token");
+    }
+
+    return token;
   }
 }

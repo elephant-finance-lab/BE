@@ -51,7 +51,9 @@ public class AccountCommandServiceImpl implements AccountCommandService {
         accountRepository
             .findById(accountId)
             .orElseThrow(() -> new AccountException(AccountErrorCode.ACCOUNT_NOT_FOUND));
-
+    if (!account.getUser().getId().equals(userId)) {
+      throw new AccountException(AccountErrorCode.ACCOUNT_NOT_FOUND);
+    }
     accountRepository.delete(account);
   }
 }
