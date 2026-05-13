@@ -8,6 +8,7 @@ import com.example.elephantfinancelab_be.domain.stocks.repository.StockRepositor
 import com.example.elephantfinancelab_be.domain.stocks.service.KisStockPriceClient;
 import com.example.elephantfinancelab_be.domain.stocks.service.KisStockPriceWebSocketClient;
 import com.example.elephantfinancelab_be.domain.stocks.service.StockSummaryRedisService;
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -28,7 +29,7 @@ public class StockQueryServiceImpl implements StockQueryService {
   public StockResDTO.Summary getSummary(String ticker) {
     Stock stock =
         stockRepository
-            .findByTickerIgnoreCase(normalizeTicker(ticker))
+            .findByTicker(normalizeTicker(ticker))
             .orElseThrow(() -> new StockException(StockErrorCode.STOCK_NOT_FOUND));
 
     StockResDTO.Summary cachedSummary = stockSummaryRedisService.find(stock.getTicker());
@@ -48,6 +49,6 @@ public class StockQueryServiceImpl implements StockQueryService {
     if (ticker == null || ticker.isBlank()) {
       throw new StockException(StockErrorCode.STOCK_NOT_FOUND);
     }
-    return ticker.trim().toUpperCase();
+    return ticker.trim().toUpperCase(Locale.ROOT);
   }
 }

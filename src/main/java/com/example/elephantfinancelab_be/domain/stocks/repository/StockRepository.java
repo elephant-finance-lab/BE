@@ -6,5 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface StockRepository extends JpaRepository<Stock, Long> {
 
-  Optional<Stock> findByTickerIgnoreCase(String ticker);
+  Optional<Stock> findByTicker(String ticker);
 }

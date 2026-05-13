@@ -10,6 +10,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -209,7 +210,7 @@ public class KisStockPriceWebSocketClient {
     if (ticker == null || ticker.isBlank()) {
       return null;
     }
-    return ticker.trim().toUpperCase();
+    return ticker.trim().toUpperCase(Locale.ROOT);
   }
 
   private boolean hasText(String value) {
@@ -236,8 +237,13 @@ public class KisStockPriceWebSocketClient {
     public CompletionStage<?> onText(WebSocket socket, CharSequence data, boolean last) {
       textBuffer.append(data);
       if (last) {
-        handleMessage(textBuffer.toString());
-        textBuffer.setLength(0);
+        try {
+          handleMessage(textBuffer.toString());
+        } catch (RuntimeException e) {
+          log.warn("한국투자증권 종목 체결가 메시지 처리 중 오류가 발생했습니다.", e);
+        } finally {
+          textBuffer.setLength(0);
+        }
       }
       socket.request(1);
       return CompletableFuture.completedFuture(null);

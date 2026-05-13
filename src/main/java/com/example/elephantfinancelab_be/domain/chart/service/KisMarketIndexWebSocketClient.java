@@ -217,8 +217,13 @@ public class KisMarketIndexWebSocketClient {
     public CompletionStage<?> onText(WebSocket socket, CharSequence data, boolean last) {
       textBuffer.append(data);
       if (last) {
-        handleMessage(textBuffer.toString());
-        textBuffer.setLength(0);
+        try {
+          handleMessage(textBuffer.toString());
+        } catch (RuntimeException e) {
+          log.warn("한국투자증권 시장 지수 메시지 처리 중 오류가 발생했습니다.", e);
+        } finally {
+          textBuffer.setLength(0);
+        }
       }
       socket.request(1);
       return CompletableFuture.completedFuture(null);

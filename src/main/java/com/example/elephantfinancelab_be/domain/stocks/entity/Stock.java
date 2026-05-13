@@ -6,7 +6,10 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import java.util.Locale;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -30,4 +33,12 @@ public class Stock extends BaseEntity {
 
   @Column(name = "name", nullable = false, length = 100)
   private String name;
+
+  @PrePersist
+  @PreUpdate
+  private void normalizeTicker() {
+    if (ticker != null) {
+      ticker = ticker.trim().toUpperCase(Locale.ROOT);
+    }
+  }
 }

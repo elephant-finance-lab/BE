@@ -5,6 +5,7 @@ import com.example.elephantfinancelab_be.domain.stocks.exception.StockException;
 import com.example.elephantfinancelab_be.domain.stocks.exception.code.StockErrorCode;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -42,6 +43,6 @@ public class StockSummaryRedisService {
   }
 
   private String redisKey(String ticker) {
-    return SUMMARY_KEY_PREFIX + ticker.trim().toUpperCase();
+    return SUMMARY_KEY_PREFIX + ticker.trim().toUpperCase(Locale.ROOT);
   }
 }
