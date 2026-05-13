@@ -47,6 +47,7 @@ public class DevDataLoader implements ApplicationRunner {
         .uuid(DEV_USER_UUID)
         .provider(Provider.GOOGLE)
         .providerUserId("dev-google-provider-user-id")
+        .email("dev@elephant.com")
         .name("김이박")
         .phone("01012345678")
         .gender(Gender.MALE)
