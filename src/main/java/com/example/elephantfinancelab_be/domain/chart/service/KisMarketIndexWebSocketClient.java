@@ -230,6 +230,7 @@ public class KisMarketIndexWebSocketClient {
     public void onOpen(WebSocket socket) {
       log.info("한국투자증권 시장 지수 웹소켓 연결 완료");
       WebSocket.Listener.super.onOpen(socket);
+      socket.request(1);
       for (MarketIndexMarket market : MarketIndexMarket.values()) {
         subscribe(socket, approvalKey, market);
       }

@@ -370,9 +370,13 @@ public class KisStockChartClient {
               node, "acml_vol", StockErrorCode.KIS_STOCK_DAILY_PRICE_RESPONSE_PARSE_FAILED);
       items.add(
           new StockDailyPriceResDTO.Item(
-              dateTime(node),
+              dailyPriceDate(node),
               closePrice,
-              signedDecimalValue(node, "prdy_ctrt", textValue(node, "prdy_vrss_sign")),
+              signedDecimalValue(
+                  node,
+                  "prdy_ctrt",
+                  textValue(node, "prdy_vrss_sign"),
+                  StockErrorCode.KIS_STOCK_DAILY_PRICE_RESPONSE_PARSE_FAILED),
               volume,
               tradingValue(node, closePrice, volume)));
     }
@@ -380,46 +384,51 @@ public class KisStockChartClient {
   }
 
   private String minuteTime(JsonNode node) {
-    LocalDate date = parseDate(textValue(node, "stck_bsop_date"));
-    LocalTime time = parseTime(textValue(node, "stck_cntg_hour"));
+    LocalDate date =
+        parseDate(
+            textValue(node, "stck_bsop_date"),
+            StockErrorCode.KIS_STOCK_CHART_RESPONSE_PARSE_FAILED);
+    LocalTime time =
+        parseTime(
+            textValue(node, "stck_cntg_hour"),
+            StockErrorCode.KIS_STOCK_CHART_RESPONSE_PARSE_FAILED);
     return date.atTime(time.withSecond(0)).format(MINUTE_FORMATTER);
   }
 
   private String dateTime(JsonNode node) {
-    return parseDate(textValue(node, "stck_bsop_date")).format(DATE_FORMATTER);
+    return parseDate(
+            textValue(node, "stck_bsop_date"), StockErrorCode.KIS_STOCK_CHART_RESPONSE_PARSE_FAILED)
+        .format(DATE_FORMATTER);
   }
 
-  private LocalDate parseDate(String value) {
+  private String dailyPriceDate(JsonNode node) {
+    return parseDate(
+            textValue(node, "stck_bsop_date"),
+            StockErrorCode.KIS_STOCK_DAILY_PRICE_RESPONSE_PARSE_FAILED)
+        .format(DATE_FORMATTER);
+  }
+
+  private LocalDate parseDate(String value, StockErrorCode parseErrorCode) {
     if (value == null) {
-      return LocalDate.now(KOREA_ZONE);
+      throw new StockException(parseErrorCode);
     }
 
     try {
       return LocalDate.parse(value, KIS_DATE_FORMATTER);
     } catch (DateTimeParseException e) {
-      log.warn(
-          "code={}, message={}, value={}",
-          StockErrorCode.KIS_STOCK_CHART_RESPONSE_PARSE_FAILED.getCode(),
-          StockErrorCode.KIS_STOCK_CHART_RESPONSE_PARSE_FAILED.getMessage(),
-          value);
-      return LocalDate.now(KOREA_ZONE);
+      throw new StockException(parseErrorCode, e);
     }
   }
 
-  private LocalTime parseTime(String value) {
+  private LocalTime parseTime(String value, StockErrorCode parseErrorCode) {
     if (value == null) {
-      return LocalTime.now(KOREA_ZONE).withSecond(0).withNano(0);
+      throw new StockException(parseErrorCode);
     }
 
     try {
       return LocalTime.parse(value, KIS_TIME_FORMATTER).withSecond(0);
     } catch (DateTimeParseException e) {
-      log.warn(
-          "code={}, message={}, value={}",
-          StockErrorCode.KIS_STOCK_CHART_RESPONSE_PARSE_FAILED.getCode(),
-          StockErrorCode.KIS_STOCK_CHART_RESPONSE_PARSE_FAILED.getMessage(),
-          value);
-      return LocalTime.now(KOREA_ZONE).withSecond(0).withNano(0);
+      throw new StockException(parseErrorCode, e);
     }
   }
 
@@ -430,42 +439,31 @@ public class KisStockChartClient {
   private Long positiveLongValue(JsonNode node, String fieldName, StockErrorCode parseErrorCode) {
     String value = textValue(node, fieldName);
     if (value == null) {
-      return 0L;
+      throw new StockException(parseErrorCode);
     }
 
     try {
       return new BigDecimal(value.trim().replace(",", "")).abs().longValue();
-    } catch (NumberFormatException e) {
-      log.warn(
-          "code={}, message={}, field={}, value={}",
-          parseErrorCode.getCode(),
-          parseErrorCode.getMessage(),
-          fieldName,
-          value);
-      return 0L;
+    } catch (RuntimeException e) {
+      throw new StockException(parseErrorCode, e);
     }
   }
 
-  private BigDecimal signedDecimalValue(JsonNode node, String fieldName, String signCode) {
-    return applySign(decimalValue(node, fieldName), signCode);
+  private BigDecimal signedDecimalValue(
+      JsonNode node, String fieldName, String signCode, StockErrorCode parseErrorCode) {
+    return applySign(decimalValue(node, fieldName, parseErrorCode), signCode);
   }
 
-  private BigDecimal decimalValue(JsonNode node, String fieldName) {
+  private BigDecimal decimalValue(JsonNode node, String fieldName, StockErrorCode parseErrorCode) {
     String value = textValue(node, fieldName);
     if (value == null) {
-      return BigDecimal.ZERO;
+      throw new StockException(parseErrorCode);
     }
 
     try {
       return new BigDecimal(value.trim().replace(",", ""));
-    } catch (NumberFormatException e) {
-      log.warn(
-          "code={}, message={}, field={}, value={}",
-          StockErrorCode.KIS_STOCK_DAILY_PRICE_RESPONSE_PARSE_FAILED.getCode(),
-          StockErrorCode.KIS_STOCK_DAILY_PRICE_RESPONSE_PARSE_FAILED.getMessage(),
-          fieldName,
-          value);
-      return BigDecimal.ZERO;
+    } catch (RuntimeException e) {
+      throw new StockException(parseErrorCode, e);
     }
   }
 
