@@ -50,7 +50,10 @@ public class SecurityConfig {
     "/api/auth/**",
     "/api/chart/market",
     "/api/chart/ranking",
+    "/api/stocks/**",
     "/api/auth/login/**",
+    "/ws",
+    "/ws/**",
   };
 
   private void writeApiFailure(HttpServletResponse response, BaseErrorCode errorCode)
