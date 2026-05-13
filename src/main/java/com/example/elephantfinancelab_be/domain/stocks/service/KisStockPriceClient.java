@@ -159,6 +159,7 @@ public class KisStockPriceClient {
 
   private BigDecimal applySign(BigDecimal value, String signCode) {
     StockPriceDirection direction = StockPriceDirection.fromSignCode(signCode);
+    // FLAT sign means no price movement, so ignore any non-zero raw delta from KIS.
     return switch (direction) {
       case DOWN -> value.abs().negate();
       case FLAT -> BigDecimal.ZERO;

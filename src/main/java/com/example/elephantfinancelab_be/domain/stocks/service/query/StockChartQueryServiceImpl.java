@@ -39,8 +39,7 @@ public class StockChartQueryServiceImpl implements StockChartQueryService {
             .findByTicker(normalizeTicker(ticker))
             .orElseThrow(() -> new StockException(StockErrorCode.STOCK_NOT_FOUND));
 
-    StockChartResDTO.Chart cachedChart =
-        stockChartRedisService.find(stock.getTicker(), chartRange, chartType);
+    StockChartResDTO.Chart cachedChart = findCachedChart(stock, chartRange, chartType);
     if (cachedChart != null) {
       subscribeRealtimeIfNeeded(stock.getTicker(), chartRange);
       log.info("종목 차트 캐시 조회 성공. ticker={}, range={}, type={}", stock.getTicker(), range, type);
@@ -57,9 +56,41 @@ public class StockChartQueryServiceImpl implements StockChartQueryService {
             chartRange.getInterval(),
             CURRENCY_KRW,
             dataPoints);
-    stockChartRedisService.save(chart);
+    saveChartCache(stock, chart);
     subscribeRealtimeIfNeeded(stock.getTicker(), chartRange);
     return chart;
+  }
+
+  private StockChartResDTO.Chart findCachedChart(
+      Stock stock, StockChartRange chartRange, StockChartType chartType) {
+    try {
+      return stockChartRedisService.find(stock.getTicker(), chartRange, chartType);
+    } catch (RuntimeException e) {
+      log.warn(
+          "code={}, message={}, ticker={}, range={}, type={}",
+          StockErrorCode.STOCK_CHART_CACHE_DESERIALIZE_FAILED.getCode(),
+          StockErrorCode.STOCK_CHART_CACHE_DESERIALIZE_FAILED.getMessage(),
+          stock.getTicker(),
+          chartRange.getValue(),
+          chartType,
+          e);
+      return null;
+    }
+  }
+
+  private void saveChartCache(Stock stock, StockChartResDTO.Chart chart) {
+    try {
+      stockChartRedisService.save(chart);
+    } catch (RuntimeException e) {
+      log.warn(
+          "code={}, message={}, ticker={}, range={}, type={}",
+          StockErrorCode.STOCK_CHART_CACHE_SERIALIZE_FAILED.getCode(),
+          StockErrorCode.STOCK_CHART_CACHE_SERIALIZE_FAILED.getMessage(),
+          stock.getTicker(),
+          chart.range(),
+          chart.type(),
+          e);
+    }
   }
 
   private void subscribeRealtimeIfNeeded(String ticker, StockChartRange range) {

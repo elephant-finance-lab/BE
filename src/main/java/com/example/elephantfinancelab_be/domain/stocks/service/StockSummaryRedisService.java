@@ -5,6 +5,7 @@ import com.example.elephantfinancelab_be.domain.stocks.exception.StockException;
 import com.example.elephantfinancelab_be.domain.stocks.exception.code.StockErrorCode;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Duration;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Service;
 public class StockSummaryRedisService {
 
   private static final String SUMMARY_KEY_PREFIX = "stock:summary:";
+  private static final Duration SUMMARY_CACHE_TTL = Duration.ofSeconds(30);
 
   private final StringRedisTemplate stringRedisTemplate;
   private final ObjectMapper objectMapper;
@@ -23,7 +25,10 @@ public class StockSummaryRedisService {
     try {
       stringRedisTemplate
           .opsForValue()
-          .set(redisKey(summary.getTicker()), objectMapper.writeValueAsString(summary));
+          .set(
+              redisKey(summary.getTicker()),
+              objectMapper.writeValueAsString(summary),
+              SUMMARY_CACHE_TTL);
     } catch (JsonProcessingException e) {
       throw new StockException(StockErrorCode.STOCK_SUMMARY_CACHE_SERIALIZE_FAILED, e);
     }

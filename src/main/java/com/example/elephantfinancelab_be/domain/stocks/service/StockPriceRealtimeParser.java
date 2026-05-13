@@ -73,13 +73,14 @@ public class StockPriceRealtimeParser {
     List<ParsedStockPrice> prices = new ArrayList<>();
     for (int index = 0; index < dataCount; index++) {
       int offset = index * RESPONSE_FIELD_COUNT;
-      if (fields.length <= offset + CHANGE_RATE_FIELD) {
+      if (fields.length < offset + RESPONSE_FIELD_COUNT) {
         log.warn(
-            "code={}, message={}, item={}, count={}",
+            "code={}, message={}, item={}, count={}, expectedAtLeast={}",
             StockErrorCode.KIS_STOCK_PRICE_REALTIME_MESSAGE_INVALID.getCode(),
             StockErrorCode.KIS_STOCK_PRICE_REALTIME_MESSAGE_INVALID.getMessage(),
             index,
-            fields.length);
+            fields.length,
+            offset + RESPONSE_FIELD_COUNT);
         break;
       }
       prices.add(toParsedStockPrice(fields, offset));
@@ -137,6 +138,7 @@ public class StockPriceRealtimeParser {
 
   private BigDecimal applySign(BigDecimal value, String signCode) {
     StockPriceDirection direction = StockPriceDirection.fromSignCode(signCode);
+    // FLAT sign means no price movement, so ignore any non-zero raw delta from KIS.
     return switch (direction) {
       case DOWN -> value.abs().negate();
       case FLAT -> BigDecimal.ZERO;

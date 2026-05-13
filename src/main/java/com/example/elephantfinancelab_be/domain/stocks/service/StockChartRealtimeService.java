@@ -4,17 +4,21 @@ import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockChartResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.entity.StockChartRange;
 import com.example.elephantfinancelab_be.domain.stocks.entity.StockChartType;
 import com.example.elephantfinancelab_be.domain.stocks.exception.code.StockErrorCode;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 @Slf4j
 @Service
@@ -23,47 +27,142 @@ public class StockChartRealtimeService {
 
   private static final DateTimeFormatter MINUTE_FORMATTER =
       DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
+  private static final Duration UPDATE_LOCK_TTL = Duration.ofSeconds(3);
+  private static final Duration INACTIVE_STATE_RETRY_INTERVAL = Duration.ofSeconds(1);
 
   private final StockChartRedisService stockChartRedisService;
   private final SimpMessagingTemplate messagingTemplate;
+  private final Map<ChartKey, ChartRuntimeState> chartStates = new ConcurrentHashMap<>();
 
   public void updateAndPush(String ticker, StockPriceRealtimeParser.ParsedStockPrice parsed) {
-    Flux.fromArray(StockChartType.values())
-        .flatMap(
-            type ->
-                Mono.justOrEmpty(
-                    stockChartRedisService.find(ticker, StockChartRange.ONE_DAY, type)))
-        .map(chart -> updateChart(chart, parsed))
-        .doOnNext(stockChartRedisService::save)
-        .doOnNext(this::push)
-        .doOnError(
-            error ->
-                log.warn(
-                    "code={}, message={}, ticker={}",
-                    StockErrorCode.STOCK_CHART_REALTIME_UPDATE_FAILED.getCode(),
-                    StockErrorCode.STOCK_CHART_REALTIME_UPDATE_FAILED.getMessage(),
-                    ticker,
-                    error))
-        .subscribe();
+    for (StockChartType type : StockChartType.values()) {
+      updateRuntimeStateAndPush(ticker, type, parsed);
+    }
   }
 
-  private StockChartResDTO.Chart updateChart(
-      StockChartResDTO.Chart chart, StockPriceRealtimeParser.ParsedStockPrice parsed) {
-    List<StockChartResDTO.DataPoint> data = new ArrayList<>(chart.data());
-    String minuteTime = minuteTime(parsed.updatedAt());
-    StockChartResDTO.DataPoint realtimePoint = newPoint(minuteTime, parsed);
+  @Scheduled(fixedDelayString = "${app.stock-chart-realtime.flush-interval-ms:1000}")
+  public void flushDirtyCharts() {
+    chartStates.forEach((key, state) -> flushDirtyChart(key, state));
+  }
 
+  private void updateRuntimeStateAndPush(
+      String ticker, StockChartType type, StockPriceRealtimeParser.ParsedStockPrice parsed) {
+    try {
+      ChartKey key = new ChartKey(normalizeTicker(ticker), type);
+      ChartRuntimeState state = chartStates.computeIfAbsent(key, this::loadRuntimeState);
+      if (state == null || !state.active()) {
+        if (state != null && state.retryable()) {
+          chartStates.remove(key, state);
+        }
+        return;
+      }
+
+      StockChartResDTO.Update update = state.update(parsed);
+      push(update);
+    } catch (RuntimeException e) {
+      log.warn(
+          "code={}, message={}, ticker={}, type={}",
+          StockErrorCode.STOCK_CHART_REALTIME_UPDATE_FAILED.getCode(),
+          StockErrorCode.STOCK_CHART_REALTIME_UPDATE_FAILED.getMessage(),
+          ticker,
+          type,
+          e);
+    }
+  }
+
+  private ChartRuntimeState loadRuntimeState(ChartKey key) {
+    try {
+      StockChartResDTO.Chart chart =
+          stockChartRedisService.find(key.ticker(), StockChartRange.ONE_DAY, key.type());
+      if (chart == null) {
+        return new ChartRuntimeState(false, null);
+      }
+      return new ChartRuntimeState(true, chart);
+    } catch (RuntimeException e) {
+      log.warn(
+          "code={}, message={}, ticker={}, type={}",
+          StockErrorCode.STOCK_CHART_REALTIME_UPDATE_FAILED.getCode(),
+          StockErrorCode.STOCK_CHART_REALTIME_UPDATE_FAILED.getMessage(),
+          key.ticker(),
+          key.type(),
+          e);
+      return new ChartRuntimeState(false, null);
+    }
+  }
+
+  private void flushDirtyChart(ChartKey key, ChartRuntimeState state) {
+    StockChartResDTO.DataPoint point = state.dirtySnapshot();
+    if (point == null) {
+      return;
+    }
+
+    String lockToken = UUID.randomUUID().toString();
+    boolean lockAcquired = false;
+    try {
+      lockAcquired = acquireUpdateLock(key.ticker(), key.type(), lockToken);
+      if (!lockAcquired) {
+        log.debug("종목 차트 flush 스킵. ticker={}, type={}, reason=lock-held", key.ticker(), key.type());
+        return;
+      }
+
+      StockChartResDTO.Chart chart =
+          stockChartRedisService.find(key.ticker(), StockChartRange.ONE_DAY, key.type());
+      if (chart == null) {
+        chartStates.remove(key);
+        return;
+      }
+
+      StockChartResDTO.Chart updatedChart = upsertPoint(chart, point);
+      stockChartRedisService.save(updatedChart);
+      state.markFlushed(point);
+    } catch (RuntimeException e) {
+      log.warn(
+          "code={}, message={}, ticker={}, type={}",
+          StockErrorCode.STOCK_CHART_REALTIME_UPDATE_FAILED.getCode(),
+          StockErrorCode.STOCK_CHART_REALTIME_UPDATE_FAILED.getMessage(),
+          key.ticker(),
+          key.type(),
+          e);
+    } finally {
+      if (lockAcquired) {
+        releaseUpdateLock(key.ticker(), key.type(), lockToken);
+      }
+    }
+  }
+
+  private boolean acquireUpdateLock(String ticker, StockChartType type, String lockToken) {
+    return stockChartRedisService.acquireUpdateLock(
+        ticker, StockChartRange.ONE_DAY, type, lockToken, UPDATE_LOCK_TTL);
+  }
+
+  private void releaseUpdateLock(String ticker, StockChartType type, String lockToken) {
+    try {
+      stockChartRedisService.releaseUpdateLock(ticker, StockChartRange.ONE_DAY, type, lockToken);
+    } catch (RuntimeException e) {
+      log.warn(
+          "code={}, message={}, ticker={}, type={}, reason=lock-release-failed",
+          StockErrorCode.STOCK_CHART_REALTIME_UPDATE_FAILED.getCode(),
+          StockErrorCode.STOCK_CHART_REALTIME_UPDATE_FAILED.getMessage(),
+          ticker,
+          type,
+          e);
+    }
+  }
+
+  private StockChartResDTO.Chart upsertPoint(
+      StockChartResDTO.Chart chart, StockChartResDTO.DataPoint point) {
+    List<StockChartResDTO.DataPoint> data = new ArrayList<>(chart.data());
     if (data.isEmpty()) {
-      data.add(realtimePoint);
+      data.add(point);
       return chartWithData(chart, data);
     }
 
     int lastIndex = data.size() - 1;
     StockChartResDTO.DataPoint lastPoint = data.get(lastIndex);
-    if (minuteTime.equals(lastPoint.time())) {
-      data.set(lastIndex, mergePoint(chart.type(), lastPoint, parsed));
+    if (point.time().equals(lastPoint.time())) {
+      data.set(lastIndex, point);
     } else {
-      data.add(realtimePoint);
+      data.add(point);
     }
 
     return chartWithData(chart, data);
@@ -108,16 +207,16 @@ public class StockChartRealtimeService {
         chart.ticker(), chart.range(), chart.type(), chart.interval(), chart.currency(), data);
   }
 
-  private void push(StockChartResDTO.Chart chart) {
+  private void push(StockChartResDTO.Update update) {
     try {
-      messagingTemplate.convertAndSend(destination(chart.ticker()), chart);
-      log.debug("종목 1D 차트 실시간 push 완료. ticker={}, type={}", chart.ticker(), chart.type());
+      messagingTemplate.convertAndSend(destination(update.ticker()), update);
+      log.debug("종목 1D 차트 실시간 push 완료. ticker={}, type={}", update.ticker(), update.type());
     } catch (RuntimeException e) {
       log.warn(
           "code={}, message={}, ticker={}",
           StockErrorCode.STOCK_CHART_PUSH_FAILED.getCode(),
           StockErrorCode.STOCK_CHART_PUSH_FAILED.getMessage(),
-          chart.ticker(),
+          update.ticker(),
           e);
     }
   }
@@ -143,5 +242,64 @@ public class StockChartRealtimeService {
 
   private Long safeLong(Long value) {
     return value == null ? 0L : value;
+  }
+
+  private String normalizeTicker(String ticker) {
+    return ticker.trim().toUpperCase(Locale.ROOT);
+  }
+
+  private record ChartKey(String ticker, StockChartType type) {}
+
+  private final class ChartRuntimeState {
+
+    private final boolean active;
+    private final StockChartResDTO.Chart chart;
+    private final AtomicBoolean dirty = new AtomicBoolean(false);
+    private final long nextLoadAtNanos;
+    private StockChartResDTO.DataPoint latestPoint;
+
+    private ChartRuntimeState(boolean active, StockChartResDTO.Chart chart) {
+      this.active = active;
+      this.chart = chart;
+      this.nextLoadAtNanos =
+          active ? Long.MAX_VALUE : System.nanoTime() + INACTIVE_STATE_RETRY_INTERVAL.toNanos();
+      this.latestPoint = chart == null || chart.data().isEmpty() ? null : chart.data().getLast();
+    }
+
+    private boolean active() {
+      return active;
+    }
+
+    private boolean retryable() {
+      return System.nanoTime() >= nextLoadAtNanos;
+    }
+
+    private synchronized StockChartResDTO.Update update(
+        StockPriceRealtimeParser.ParsedStockPrice parsed) {
+      String currentMinute = minuteTime(parsed.updatedAt());
+      if (latestPoint == null || !currentMinute.equals(latestPoint.time())) {
+        latestPoint = newPoint(currentMinute, parsed);
+      } else {
+        latestPoint = mergePoint(chart.type(), latestPoint, parsed);
+      }
+      dirty.set(true);
+      return new StockChartResDTO.Update(
+          chart.ticker(),
+          chart.range(),
+          chart.type(),
+          chart.interval(),
+          chart.currency(),
+          latestPoint);
+    }
+
+    private synchronized StockChartResDTO.DataPoint dirtySnapshot() {
+      return dirty.get() ? latestPoint : null;
+    }
+
+    private synchronized void markFlushed(StockChartResDTO.DataPoint flushedPoint) {
+      if (latestPoint != null && latestPoint.equals(flushedPoint)) {
+        dirty.set(false);
+      }
+    }
   }
 }

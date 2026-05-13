@@ -1,8 +1,10 @@
 package com.example.elephantfinancelab_be.domain.stocks.controller;
 
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockChartResDTO;
+import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockDailyPriceResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.service.query.StockChartQueryService;
+import com.example.elephantfinancelab_be.domain.stocks.service.query.StockDailyPriceQueryService;
 import com.example.elephantfinancelab_be.domain.stocks.service.query.StockQueryService;
 import com.example.elephantfinancelab_be.global.apiPayload.ApiResponse;
 import com.example.elephantfinancelab_be.global.apiPayload.code.GeneralSuccessCode;
@@ -25,6 +27,7 @@ public class StockController {
 
   private final StockQueryService stockQueryService;
   private final StockChartQueryService stockChartQueryService;
+  private final StockDailyPriceQueryService stockDailyPriceQueryService;
 
   @Operation(summary = "종목 상세 상단 조회", description = "국내주식 종목명, 현재가, 전일 대비 정보를 조회합니다.")
   @GetMapping("/{ticker}/summary")
@@ -42,6 +45,15 @@ public class StockController {
       @Parameter(description = "1D, 1W, 3M, 1Y, 5Y, ALL") @RequestParam String range,
       @Parameter(description = "LINE, CANDLE") @RequestParam String type) {
     StockChartResDTO.Chart result = stockChartQueryService.getChart(ticker, range, type);
+    return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
+        .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+  }
+
+  @Operation(summary = "종목 일별 시세 조회", description = "국내주식 종목 상세 페이지의 일별 시세 표 데이터를 조회합니다.")
+  @GetMapping("/{ticker}/daily")
+  public ResponseEntity<ApiResponse<StockDailyPriceResDTO.DailyPrices>> getDailyPrices(
+      @Parameter(description = "종목코드. 예: 005930") @PathVariable String ticker) {
+    StockDailyPriceResDTO.DailyPrices result = stockDailyPriceQueryService.getDailyPrices(ticker);
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
         .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }
