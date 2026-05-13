@@ -1,6 +1,7 @@
 package com.example.elephantfinancelab_be.domain.stocks.service;
 
 import com.example.elephantfinancelab_be.domain.stocks.entity.StockPriceDirection;
+import com.example.elephantfinancelab_be.domain.stocks.exception.code.StockErrorCode;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -32,6 +33,8 @@ public class StockPriceRealtimeParser {
   private static final int CHANGE_SIGN_FIELD = 3;
   private static final int CHANGE_AMOUNT_FIELD = 4;
   private static final int CHANGE_RATE_FIELD = 5;
+  private static final int TRADE_VOLUME_FIELD = 12;
+  private static final int ACCUMULATED_VOLUME_FIELD = 13;
   private static final int BUSINESS_DATE_FIELD = 33;
 
   public Optional<ParsedStockPrice> parse(String message) {
@@ -49,13 +52,20 @@ public class StockPriceRealtimeParser {
     }
 
     if ("1".equals(parts[0])) {
-      log.warn("암호화된 한국투자증권 실시간 체결가 메시지는 처리하지 않습니다.");
+      log.warn(
+          "code={}, message={}, reason=encrypted",
+          StockErrorCode.KIS_STOCK_PRICE_REALTIME_MESSAGE_INVALID.getCode(),
+          StockErrorCode.KIS_STOCK_PRICE_REALTIME_MESSAGE_INVALID.getMessage());
       return List.of();
     }
 
     String[] fields = parts[3].split("\\^", -1);
     if (fields.length <= CHANGE_RATE_FIELD) {
-      log.warn("한국투자증권 실시간 체결가 메시지 필드 수가 부족합니다. count={}", fields.length);
+      log.warn(
+          "code={}, message={}, count={}",
+          StockErrorCode.KIS_STOCK_PRICE_REALTIME_MESSAGE_INVALID.getCode(),
+          StockErrorCode.KIS_STOCK_PRICE_REALTIME_MESSAGE_INVALID.getMessage(),
+          fields.length);
       return List.of();
     }
 
@@ -64,7 +74,12 @@ public class StockPriceRealtimeParser {
     for (int index = 0; index < dataCount; index++) {
       int offset = index * RESPONSE_FIELD_COUNT;
       if (fields.length <= offset + CHANGE_RATE_FIELD) {
-        log.warn("한국투자증권 실시간 체결가 메시지 항목 필드 수가 부족합니다. item={}, count={}", index, fields.length);
+        log.warn(
+            "code={}, message={}, item={}, count={}",
+            StockErrorCode.KIS_STOCK_PRICE_REALTIME_MESSAGE_INVALID.getCode(),
+            StockErrorCode.KIS_STOCK_PRICE_REALTIME_MESSAGE_INVALID.getMessage(),
+            index,
+            fields.length);
         break;
       }
       prices.add(toParsedStockPrice(fields, offset));
@@ -82,6 +97,8 @@ public class StockPriceRealtimeParser {
         applySign(parseDecimal(fields[offset + CHANGE_RATE_FIELD]), signCode),
         signCode,
         StockPriceDirection.fromSignCode(signCode),
+        parseDecimal(fieldValue(fields, offset + TRADE_VOLUME_FIELD)).abs().longValue(),
+        parseDecimal(fieldValue(fields, offset + ACCUMULATED_VOLUME_FIELD)).abs().longValue(),
         parseTimestamp(
             fieldValue(fields, offset + BUSINESS_DATE_FIELD),
             fieldValue(fields, offset + TRADE_TIME_FIELD)));
@@ -109,7 +126,11 @@ public class StockPriceRealtimeParser {
     try {
       return new BigDecimal(value.trim().replace(",", ""));
     } catch (NumberFormatException e) {
-      log.warn("한국투자증권 실시간 체결가 메시지의 숫자 형식이 올바르지 않습니다. value={}", value);
+      log.warn(
+          "code={}, message={}, value={}",
+          StockErrorCode.KIS_STOCK_PRICE_REALTIME_MESSAGE_INVALID.getCode(),
+          StockErrorCode.KIS_STOCK_PRICE_REALTIME_MESSAGE_INVALID.getMessage(),
+          value);
       return BigDecimal.ZERO;
     }
   }
@@ -161,5 +182,7 @@ public class StockPriceRealtimeParser {
       BigDecimal changeRate,
       String signCode,
       StockPriceDirection direction,
+      Long tradeVolume,
+      Long accumulatedVolume,
       LocalDateTime updatedAt) {}
 }

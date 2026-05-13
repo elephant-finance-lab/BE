@@ -1,6 +1,7 @@
 package com.example.elephantfinancelab_be.domain.stocks.service;
 
 import com.example.elephantfinancelab_be.domain.chart.service.KisApprovalKeyClient;
+import com.example.elephantfinancelab_be.domain.stocks.exception.code.StockErrorCode;
 import com.example.elephantfinancelab_be.global.config.KisProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -62,7 +63,10 @@ public class KisStockPriceWebSocketClient {
     }
 
     if (!hasText(kisProperties.getAppKey()) || !hasText(kisProperties.getAppSecret())) {
-      log.warn("한국투자증권 인증 정보가 없어 종목 체결가 웹소켓 연결을 건너뜁니다.");
+      log.warn(
+          "code={}, message={}, reason=missing-kis-credentials",
+          StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getCode(),
+          StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getMessage());
       return;
     }
 
@@ -111,7 +115,11 @@ public class KisStockPriceWebSocketClient {
               (socket, throwable) -> {
                 connecting.set(false);
                 if (throwable != null) {
-                  log.warn("한국투자증권 종목 체결가 웹소켓 연결에 실패했습니다.", throwable);
+                  log.warn(
+                      "code={}, message={}",
+                      StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getCode(),
+                      StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getMessage(),
+                      throwable);
                   scheduleReconnect();
                   return;
                 }
@@ -120,7 +128,11 @@ public class KisStockPriceWebSocketClient {
               });
     } catch (RuntimeException e) {
       connecting.set(false);
-      log.warn("한국투자증권 종목 체결가 웹소켓 연결 준비에 실패했습니다.", e);
+      log.warn(
+          "code={}, message={}, phase=prepare-connect",
+          StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getCode(),
+          StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getMessage(),
+          e);
       scheduleReconnect();
     }
   }
@@ -147,13 +159,23 @@ public class KisStockPriceWebSocketClient {
           .whenComplete(
               (unused, throwable) -> {
                 if (throwable != null) {
-                  log.warn("한국투자증권 종목 체결가 구독에 실패했습니다. ticker={}", ticker, throwable);
+                  log.warn(
+                      "code={}, message={}, ticker={}",
+                      StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getCode(),
+                      StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getMessage(),
+                      ticker,
+                      throwable);
                   return;
                 }
                 log.info("한국투자증권 종목 체결가 구독 완료. ticker={}", ticker);
               });
     } catch (JsonProcessingException e) {
-      log.warn("한국투자증권 종목 체결가 구독 메시지 생성에 실패했습니다. ticker={}", ticker, e);
+      log.warn(
+          "code={}, message={}, ticker={}",
+          StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getCode(),
+          StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getMessage(),
+          ticker,
+          e);
     }
   }
 
@@ -240,7 +262,11 @@ public class KisStockPriceWebSocketClient {
         try {
           handleMessage(textBuffer.toString());
         } catch (RuntimeException e) {
-          log.warn("한국투자증권 종목 체결가 메시지 처리 중 오류가 발생했습니다.", e);
+          log.warn(
+              "code={}, message={}, phase=handle-message",
+              StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getCode(),
+              StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getMessage(),
+              e);
         } finally {
           textBuffer.setLength(0);
         }
@@ -251,7 +277,12 @@ public class KisStockPriceWebSocketClient {
 
     @Override
     public CompletionStage<?> onClose(WebSocket socket, int statusCode, String reason) {
-      log.warn("한국투자증권 종목 체결가 웹소켓 연결 종료. statusCode={}, reason={}", statusCode, reason);
+      log.warn(
+          "code={}, message={}, statusCode={}, reason={}",
+          StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getCode(),
+          StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getMessage(),
+          statusCode,
+          reason);
       webSocket = null;
       KisStockPriceWebSocketClient.this.approvalKey = null;
       scheduleReconnect();
@@ -260,7 +291,11 @@ public class KisStockPriceWebSocketClient {
 
     @Override
     public void onError(WebSocket socket, Throwable error) {
-      log.warn("한국투자증권 종목 체결가 웹소켓 오류가 발생했습니다.", error);
+      log.warn(
+          "code={}, message={}",
+          StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getCode(),
+          StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getMessage(),
+          error);
       webSocket = null;
       KisStockPriceWebSocketClient.this.approvalKey = null;
       scheduleReconnect();

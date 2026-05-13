@@ -24,7 +24,11 @@ public class GeneralExceptionAdvice {
 
   @ExceptionHandler(GeneralException.class)
   public ResponseEntity<ApiResponse<Void>> handleGeneralException(GeneralException ex) {
-    log.warn("Handled GeneralException: {}", ex.getMessage());
+    log.warn(
+        "code={}, message={}, detail={}",
+        ex.getCode().getCode(),
+        ex.getCode().getMessage(),
+        ex.getMessage());
     log.debug("GeneralException detail", ex);
     return ResponseEntity.status(ex.getCode().getStatus())
         .body(ApiResponse.onFailure(ex.getCode(), null));
@@ -57,30 +61,35 @@ public class GeneralExceptionAdvice {
   @ExceptionHandler(HttpMessageNotReadableException.class)
   public ResponseEntity<ApiResponse<Void>> handleHttpMessageNotReadable(
       HttpMessageNotReadableException ex) {
-    log.warn("Malformed request body: {}", ex.getMessage());
     BaseErrorCode code = GeneralErrorCode.BAD_REQUEST;
+    log.warn("code={}, message={}, detail={}", code.getCode(), code.getMessage(), ex.getMessage());
     return ResponseEntity.status(code.getStatus()).body(ApiResponse.onFailure(code, null));
   }
 
   @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
   public ResponseEntity<ApiResponse<Void>> handleIllegalArgumentOrState(RuntimeException ex) {
-    log.warn("{}: {}", ex.getClass().getSimpleName(), ex.getMessage());
     BaseErrorCode code = GeneralErrorCode.BAD_REQUEST;
+    log.warn(
+        "code={}, message={}, exception={}, detail={}",
+        code.getCode(),
+        code.getMessage(),
+        ex.getClass().getSimpleName(),
+        ex.getMessage());
     return ResponseEntity.status(code.getStatus()).body(ApiResponse.onFailure(code, null));
   }
 
   @ExceptionHandler(AuthenticationException.class)
   public ResponseEntity<ApiResponse<Void>> handleAuthenticationException(
       AuthenticationException ex) {
-    log.warn("Authentication failed: {}", ex.getMessage());
     BaseErrorCode code = GeneralErrorCode.UNAUTHORIZED;
+    log.warn("code={}, message={}, detail={}", code.getCode(), code.getMessage(), ex.getMessage());
     return ResponseEntity.status(code.getStatus()).body(ApiResponse.onFailure(code, null));
   }
 
   @ExceptionHandler(AccessDeniedException.class)
   public ResponseEntity<ApiResponse<Void>> handleAccessDeniedException(AccessDeniedException ex) {
-    log.warn("Access denied: {}", ex.getMessage());
     BaseErrorCode code = GeneralErrorCode.FORBIDDEN;
+    log.warn("code={}, message={}, detail={}", code.getCode(), code.getMessage(), ex.getMessage());
     return ResponseEntity.status(code.getStatus()).body(ApiResponse.onFailure(code, null));
   }
 

@@ -65,7 +65,8 @@ public class KisStockPriceClient {
           httpClient.send(request, HttpResponse.BodyHandlers.ofString());
       if (response.statusCode() < 200 || response.statusCode() >= 300) {
         log.warn(
-            "{} status={}",
+            "code={}, message={}, status={}",
+            StockErrorCode.KIS_STOCK_PRICE_API_FAILED.getCode(),
             StockErrorCode.KIS_STOCK_PRICE_API_FAILED.getMessage(),
             response.statusCode());
         throw new StockException(StockErrorCode.KIS_STOCK_PRICE_API_FAILED);
@@ -74,7 +75,8 @@ public class KisStockPriceClient {
       JsonNode root = objectMapper.readTree(response.body());
       if (!"0".equals(root.path("rt_cd").asText())) {
         log.warn(
-            "{} msg_cd={}, msg={}",
+            "code={}, message={}, msg_cd={}, msg={}",
+            StockErrorCode.KIS_STOCK_PRICE_API_FAILED.getCode(),
             StockErrorCode.KIS_STOCK_PRICE_API_FAILED.getMessage(),
             root.path("msg_cd").asText(),
             root.path("msg1").asText());
@@ -145,7 +147,12 @@ public class KisStockPriceClient {
     try {
       return new BigDecimal(value.trim().replace(",", ""));
     } catch (NumberFormatException e) {
-      log.warn("한국투자증권 현재가 응답의 숫자 형식이 올바르지 않습니다. field={}, value={}", fieldName, value);
+      log.warn(
+          "code={}, message={}, field={}, value={}",
+          StockErrorCode.KIS_STOCK_PRICE_RESPONSE_PARSE_FAILED.getCode(),
+          StockErrorCode.KIS_STOCK_PRICE_RESPONSE_PARSE_FAILED.getMessage(),
+          fieldName,
+          value);
       return BigDecimal.ZERO;
     }
   }

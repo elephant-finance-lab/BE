@@ -44,7 +44,8 @@ public class KisApprovalKeyClient {
 
       if (response.statusCode() < 200 || response.statusCode() >= 300) {
         log.warn(
-            "{} status={}",
+            "code={}, message={}, status={}",
+            ChartErrorCode.KIS_APPROVAL_KEY_FAILED.getCode(),
             ChartErrorCode.KIS_APPROVAL_KEY_FAILED.getMessage(),
             response.statusCode());
         throw new ChartException(ChartErrorCode.KIS_APPROVAL_KEY_FAILED);
