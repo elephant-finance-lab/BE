@@ -128,6 +128,7 @@ public class MarketIndexRealtimeParser {
       return value;
     }
 
+    // FLAT sign means no index movement, so ignore any non-zero raw delta from KIS.
     return switch (signCode) {
       case "4", "5", "8", "9" -> value.abs().negate();
       case "3" -> BigDecimal.ZERO;

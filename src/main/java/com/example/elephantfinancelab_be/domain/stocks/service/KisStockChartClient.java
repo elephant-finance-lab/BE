@@ -2,7 +2,9 @@ package com.example.elephantfinancelab_be.domain.stocks.service;
 
 import com.example.elephantfinancelab_be.domain.chart.service.KisAccessTokenClient;
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockChartResDTO;
+import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockDailyPriceResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.entity.StockChartRange;
+import com.example.elephantfinancelab_be.domain.stocks.entity.StockPriceDirection;
 import com.example.elephantfinancelab_be.domain.stocks.exception.StockException;
 import com.example.elephantfinancelab_be.domain.stocks.exception.code.StockErrorCode;
 import com.example.elephantfinancelab_be.global.config.KisProperties;
@@ -33,9 +35,13 @@ public class KisStockChartClient {
       "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice";
   private static final String DAILY_ITEM_CHART_PATH =
       "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice";
+  private static final String CURRENT_DAILY_PRICE_PATH =
+      "/uapi/domestic-stock/v1/quotations/inquire-daily-price";
   private static final String TIME_ITEM_CHART_TR_ID = "FHKST03010200";
   private static final String DAILY_ITEM_CHART_TR_ID = "FHKST03010100";
+  private static final String CURRENT_DAILY_PRICE_TR_ID = "FHKST01010400";
   private static final String KRX_MARKET_DIV_CODE = "J";
+  private static final String DAILY_PERIOD_DIV_CODE = "D";
   private static final String ADJUSTED_PRICE = "0";
   private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
   private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
@@ -84,6 +90,23 @@ public class KisStockChartClient {
             : toPeriodDataPoints(root.path("output2"));
     points.sort(Comparator.comparing(StockChartResDTO.DataPoint::time));
     return points;
+  }
+
+  public List<StockDailyPriceResDTO.Item> fetchDailyPrices(String ticker) {
+    JsonNode root = fetchCurrentDailyPrice(ticker);
+    if (!"0".equals(root.path("rt_cd").asText())) {
+      log.warn(
+          "code={}, message={}, msg_cd={}, msg={}",
+          StockErrorCode.KIS_STOCK_DAILY_PRICE_API_FAILED.getCode(),
+          StockErrorCode.KIS_STOCK_DAILY_PRICE_API_FAILED.getMessage(),
+          root.path("msg_cd").asText(),
+          root.path("msg1").asText());
+      throw new StockException(StockErrorCode.KIS_STOCK_DAILY_PRICE_API_FAILED);
+    }
+
+    List<StockDailyPriceResDTO.Item> items = toDailyPriceItems(root.path("output"));
+    items.sort(Comparator.comparing(StockDailyPriceResDTO.Item::date).reversed());
+    return items;
   }
 
   private JsonNode fetchMinuteChart(String ticker) {
@@ -160,6 +183,39 @@ public class KisStockChartClient {
         .block();
   }
 
+  private JsonNode fetchCurrentDailyPrice(String ticker) {
+    log.debug(
+        "한국투자증권 일별 시세 API 호출. ticker={}, trId={}, period={}",
+        ticker,
+        CURRENT_DAILY_PRICE_TR_ID,
+        DAILY_PERIOD_DIV_CODE);
+    return webClient
+        .get()
+        .uri(
+            uriBuilder ->
+                uriBuilder
+                    .path(CURRENT_DAILY_PRICE_PATH)
+                    .queryParam("FID_COND_MRKT_DIV_CODE", KRX_MARKET_DIV_CODE)
+                    .queryParam("FID_INPUT_ISCD", ticker)
+                    .queryParam("FID_PERIOD_DIV_CODE", DAILY_PERIOD_DIV_CODE)
+                    .queryParam("FID_ORG_ADJ_PRC", ADJUSTED_PRICE)
+                    .build())
+        .headers(headers -> applyKisHeaders(headers, CURRENT_DAILY_PRICE_TR_ID))
+        .retrieve()
+        .onStatus(
+            status -> status.isError(),
+            response ->
+                response
+                    .bodyToMono(String.class)
+                    .defaultIfEmpty("")
+                    .map(body -> stockDailyPriceApiException(response.statusCode().value(), body)))
+        .bodyToMono(String.class)
+        .map(this::readDailyPriceTree)
+        .timeout(REQUEST_TIMEOUT)
+        .onErrorMap(this::mapStockDailyPriceException)
+        .block();
+  }
+
   private void applyKisHeaders(HttpHeaders headers, String trId) {
     headers.setContentType(
         MediaType.parseMediaType(MediaType.APPLICATION_JSON_VALUE + "; charset=utf-8"));
@@ -180,6 +236,16 @@ public class KisStockChartClient {
     return new StockException(StockErrorCode.KIS_STOCK_CHART_API_FAILED);
   }
 
+  private RuntimeException stockDailyPriceApiException(int statusCode, String body) {
+    log.warn(
+        "code={}, message={}, status={}, responseBody={}",
+        StockErrorCode.KIS_STOCK_DAILY_PRICE_API_FAILED.getCode(),
+        StockErrorCode.KIS_STOCK_DAILY_PRICE_API_FAILED.getMessage(),
+        statusCode,
+        body);
+    return new StockException(StockErrorCode.KIS_STOCK_DAILY_PRICE_API_FAILED);
+  }
+
   private Throwable mapStockChartException(Throwable throwable) {
     if (throwable instanceof StockException) {
       return throwable;
@@ -193,17 +259,46 @@ public class KisStockChartClient {
     return new StockException(StockErrorCode.KIS_STOCK_CHART_API_FAILED, throwable);
   }
 
+  private Throwable mapStockDailyPriceException(Throwable throwable) {
+    if (throwable instanceof StockException) {
+      return throwable;
+    }
+    log.warn(
+        "code={}, message={}, exception={}, detail={}",
+        StockErrorCode.KIS_STOCK_DAILY_PRICE_API_FAILED.getCode(),
+        StockErrorCode.KIS_STOCK_DAILY_PRICE_API_FAILED.getMessage(),
+        throwable.getClass().getSimpleName(),
+        throwable.getMessage());
+    return new StockException(StockErrorCode.KIS_STOCK_DAILY_PRICE_API_FAILED, throwable);
+  }
+
   private JsonNode readTree(String body) {
     try {
       return objectMapper.readTree(body);
     } catch (JsonProcessingException e) {
-      log.warn(
-          "code={}, message={}, responseBody={}",
-          StockErrorCode.KIS_STOCK_CHART_RESPONSE_PARSE_FAILED.getCode(),
-          StockErrorCode.KIS_STOCK_CHART_RESPONSE_PARSE_FAILED.getMessage(),
-          body,
-          e);
+      log.atWarn()
+          .setCause(e)
+          .log(
+              "code={}, message={}, responseBody={}",
+              StockErrorCode.KIS_STOCK_CHART_RESPONSE_PARSE_FAILED.getCode(),
+              StockErrorCode.KIS_STOCK_CHART_RESPONSE_PARSE_FAILED.getMessage(),
+              body);
       throw new StockException(StockErrorCode.KIS_STOCK_CHART_RESPONSE_PARSE_FAILED, e);
+    }
+  }
+
+  private JsonNode readDailyPriceTree(String body) {
+    try {
+      return objectMapper.readTree(body);
+    } catch (JsonProcessingException e) {
+      log.atWarn()
+          .setCause(e)
+          .log(
+              "code={}, message={}, responseBody={}",
+              StockErrorCode.KIS_STOCK_DAILY_PRICE_RESPONSE_PARSE_FAILED.getCode(),
+              StockErrorCode.KIS_STOCK_DAILY_PRICE_RESPONSE_PARSE_FAILED.getMessage(),
+              body);
+      throw new StockException(StockErrorCode.KIS_STOCK_DAILY_PRICE_RESPONSE_PARSE_FAILED, e);
     }
   }
 
@@ -260,6 +355,30 @@ public class KisStockChartClient {
     return points;
   }
 
+  private List<StockDailyPriceResDTO.Item> toDailyPriceItems(JsonNode output) {
+    List<StockDailyPriceResDTO.Item> items = new ArrayList<>();
+    if (!output.isArray()) {
+      return items;
+    }
+
+    for (JsonNode node : output) {
+      Long closePrice =
+          positiveLongValue(
+              node, "stck_clpr", StockErrorCode.KIS_STOCK_DAILY_PRICE_RESPONSE_PARSE_FAILED);
+      Long volume =
+          positiveLongValue(
+              node, "acml_vol", StockErrorCode.KIS_STOCK_DAILY_PRICE_RESPONSE_PARSE_FAILED);
+      items.add(
+          new StockDailyPriceResDTO.Item(
+              dateTime(node),
+              closePrice,
+              signedDecimalValue(node, "prdy_ctrt", textValue(node, "prdy_vrss_sign")),
+              volume,
+              tradingValue(node, closePrice, volume)));
+    }
+    return items;
+  }
+
   private String minuteTime(JsonNode node) {
     LocalDate date = parseDate(textValue(node, "stck_bsop_date"));
     LocalTime time = parseTime(textValue(node, "stck_cntg_hour"));
@@ -305,6 +424,10 @@ public class KisStockChartClient {
   }
 
   private Long positiveLongValue(JsonNode node, String fieldName) {
+    return positiveLongValue(node, fieldName, StockErrorCode.KIS_STOCK_CHART_RESPONSE_PARSE_FAILED);
+  }
+
+  private Long positiveLongValue(JsonNode node, String fieldName, StockErrorCode parseErrorCode) {
     String value = textValue(node, fieldName);
     if (value == null) {
       return 0L;
@@ -315,12 +438,53 @@ public class KisStockChartClient {
     } catch (NumberFormatException e) {
       log.warn(
           "code={}, message={}, field={}, value={}",
-          StockErrorCode.KIS_STOCK_CHART_RESPONSE_PARSE_FAILED.getCode(),
-          StockErrorCode.KIS_STOCK_CHART_RESPONSE_PARSE_FAILED.getMessage(),
+          parseErrorCode.getCode(),
+          parseErrorCode.getMessage(),
           fieldName,
           value);
       return 0L;
     }
+  }
+
+  private BigDecimal signedDecimalValue(JsonNode node, String fieldName, String signCode) {
+    return applySign(decimalValue(node, fieldName), signCode);
+  }
+
+  private BigDecimal decimalValue(JsonNode node, String fieldName) {
+    String value = textValue(node, fieldName);
+    if (value == null) {
+      return BigDecimal.ZERO;
+    }
+
+    try {
+      return new BigDecimal(value.trim().replace(",", ""));
+    } catch (NumberFormatException e) {
+      log.warn(
+          "code={}, message={}, field={}, value={}",
+          StockErrorCode.KIS_STOCK_DAILY_PRICE_RESPONSE_PARSE_FAILED.getCode(),
+          StockErrorCode.KIS_STOCK_DAILY_PRICE_RESPONSE_PARSE_FAILED.getMessage(),
+          fieldName,
+          value);
+      return BigDecimal.ZERO;
+    }
+  }
+
+  private BigDecimal applySign(BigDecimal value, String signCode) {
+    StockPriceDirection direction = StockPriceDirection.fromSignCode(signCode);
+    return switch (direction) {
+      case DOWN -> value.abs().negate();
+      case FLAT -> BigDecimal.ZERO;
+      case UP, UNKNOWN -> value.abs();
+    };
+  }
+
+  private Long tradingValue(JsonNode node, Long closePrice, Long volume) {
+    String value = textValue(node, "acml_tr_pbmn");
+    if (value != null) {
+      return positiveLongValue(
+          node, "acml_tr_pbmn", StockErrorCode.KIS_STOCK_DAILY_PRICE_RESPONSE_PARSE_FAILED);
+    }
+    return BigDecimal.valueOf(closePrice).multiply(BigDecimal.valueOf(volume)).longValue();
   }
 
   private String textValue(JsonNode node, String fieldName) {

@@ -62,7 +62,12 @@ public class GeneralExceptionAdvice {
   public ResponseEntity<ApiResponse<Void>> handleHttpMessageNotReadable(
       HttpMessageNotReadableException ex) {
     BaseErrorCode code = GeneralErrorCode.BAD_REQUEST;
-    log.warn("code={}, message={}, detail={}", code.getCode(), code.getMessage(), ex.getMessage());
+    log.warn(
+        "code={}, message={}, exception={}",
+        code.getCode(),
+        code.getMessage(),
+        ex.getClass().getSimpleName());
+    log.debug("exception detail", ex);
     return ResponseEntity.status(code.getStatus()).body(ApiResponse.onFailure(code, null));
   }
 
@@ -70,11 +75,11 @@ public class GeneralExceptionAdvice {
   public ResponseEntity<ApiResponse<Void>> handleIllegalArgumentOrState(RuntimeException ex) {
     BaseErrorCode code = GeneralErrorCode.BAD_REQUEST;
     log.warn(
-        "code={}, message={}, exception={}, detail={}",
+        "code={}, message={}, exception={}",
         code.getCode(),
         code.getMessage(),
-        ex.getClass().getSimpleName(),
-        ex.getMessage());
+        ex.getClass().getSimpleName());
+    log.debug("exception detail", ex);
     return ResponseEntity.status(code.getStatus()).body(ApiResponse.onFailure(code, null));
   }
 
@@ -82,14 +87,24 @@ public class GeneralExceptionAdvice {
   public ResponseEntity<ApiResponse<Void>> handleAuthenticationException(
       AuthenticationException ex) {
     BaseErrorCode code = GeneralErrorCode.UNAUTHORIZED;
-    log.warn("code={}, message={}, detail={}", code.getCode(), code.getMessage(), ex.getMessage());
+    log.warn(
+        "code={}, message={}, exception={}",
+        code.getCode(),
+        code.getMessage(),
+        ex.getClass().getSimpleName());
+    log.debug("exception detail", ex);
     return ResponseEntity.status(code.getStatus()).body(ApiResponse.onFailure(code, null));
   }
 
   @ExceptionHandler(AccessDeniedException.class)
   public ResponseEntity<ApiResponse<Void>> handleAccessDeniedException(AccessDeniedException ex) {
     BaseErrorCode code = GeneralErrorCode.FORBIDDEN;
-    log.warn("code={}, message={}, detail={}", code.getCode(), code.getMessage(), ex.getMessage());
+    log.warn(
+        "code={}, message={}, exception={}",
+        code.getCode(),
+        code.getMessage(),
+        ex.getClass().getSimpleName());
+    log.debug("exception detail", ex);
     return ResponseEntity.status(code.getStatus()).body(ApiResponse.onFailure(code, null));
   }
 

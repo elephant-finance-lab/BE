@@ -32,7 +32,7 @@ public class StockQueryServiceImpl implements StockQueryService {
             .findByTicker(normalizeTicker(ticker))
             .orElseThrow(() -> new StockException(StockErrorCode.STOCK_NOT_FOUND));
 
-    StockResDTO.Summary cachedSummary = stockSummaryRedisService.find(stock.getTicker());
+    StockResDTO.Summary cachedSummary = findCachedSummary(stock);
     if (cachedSummary != null) {
       kisStockPriceWebSocketClient.subscribe(stock.getTicker());
       log.info("종목 요약 캐시 조회 성공. ticker={}", stock.getTicker());
@@ -40,9 +40,36 @@ public class StockQueryServiceImpl implements StockQueryService {
     }
 
     StockResDTO.Summary summary = kisStockPriceClient.fetchSummary(stock);
-    stockSummaryRedisService.save(summary);
+    saveSummaryCache(stock, summary);
     kisStockPriceWebSocketClient.subscribe(stock.getTicker());
     return summary;
+  }
+
+  private StockResDTO.Summary findCachedSummary(Stock stock) {
+    try {
+      return stockSummaryRedisService.find(stock.getTicker());
+    } catch (RuntimeException e) {
+      log.warn(
+          "code={}, message={}, ticker={}",
+          StockErrorCode.STOCK_SUMMARY_CACHE_DESERIALIZE_FAILED.getCode(),
+          StockErrorCode.STOCK_SUMMARY_CACHE_DESERIALIZE_FAILED.getMessage(),
+          stock.getTicker(),
+          e);
+      return null;
+    }
+  }
+
+  private void saveSummaryCache(Stock stock, StockResDTO.Summary summary) {
+    try {
+      stockSummaryRedisService.save(summary);
+    } catch (RuntimeException e) {
+      log.warn(
+          "code={}, message={}, ticker={}",
+          StockErrorCode.STOCK_SUMMARY_CACHE_SAVE_FAILED.getCode(),
+          StockErrorCode.STOCK_SUMMARY_CACHE_SAVE_FAILED.getMessage(),
+          stock.getTicker(),
+          e);
+    }
   }
 
   private String normalizeTicker(String ticker) {

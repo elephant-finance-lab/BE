@@ -39,6 +39,18 @@ class StockPriceRealtimeParserTest {
   }
 
   @Test
+  void parseKisRealtimeStockPriceMessageWithFlatSign() {
+    String message =
+        "0|H0STCNT0|001|" + item("005930", "143000", "70000", "3", "100", "0.12", "20260513");
+
+    StockPriceRealtimeParser.ParsedStockPrice result = parser.parse(message).orElseThrow();
+
+    assertThat(result.changeAmountKrw()).isZero();
+    assertThat(result.changeRate()).isEqualByComparingTo(BigDecimal.ZERO);
+    assertThat(result.direction()).isEqualTo(StockPriceDirection.FLAT);
+  }
+
+  @Test
   void parseMultipleKisRealtimeStockPriceMessages() {
     String message =
         "0|H0STCNT0|002|"

@@ -31,12 +31,16 @@ public enum StockErrorCode implements BaseErrorCode {
   KIS_STOCK_PRICE_WEBSOCKET_FAILED(
       HttpStatus.BAD_GATEWAY, "STOCK502_2", "한국투자증권 실시간 체결가 구독에 실패했습니다."),
   KIS_STOCK_CHART_API_FAILED(HttpStatus.BAD_GATEWAY, "STOCK502_3", "한국투자증권 종목 차트 조회에 실패했습니다."),
+  KIS_STOCK_DAILY_PRICE_API_FAILED(
+      HttpStatus.BAD_GATEWAY, "STOCK502_7", "한국투자증권 일별 시세 조회에 실패했습니다."),
   KIS_STOCK_PRICE_RESPONSE_PARSE_FAILED(
       HttpStatus.BAD_GATEWAY, "STOCK502_4", "한국투자증권 현재가 응답 파싱에 실패했습니다."),
   KIS_STOCK_PRICE_REALTIME_MESSAGE_INVALID(
       HttpStatus.BAD_GATEWAY, "STOCK502_5", "한국투자증권 실시간 체결가 메시지가 올바르지 않습니다."),
   KIS_STOCK_CHART_RESPONSE_PARSE_FAILED(
       HttpStatus.BAD_GATEWAY, "STOCK502_6", "한국투자증권 종목 차트 응답 파싱에 실패했습니다."),
+  KIS_STOCK_DAILY_PRICE_RESPONSE_PARSE_FAILED(
+      HttpStatus.BAD_GATEWAY, "STOCK502_8", "한국투자증권 일별 시세 응답 파싱에 실패했습니다."),
   ;
 
   private final HttpStatus status;

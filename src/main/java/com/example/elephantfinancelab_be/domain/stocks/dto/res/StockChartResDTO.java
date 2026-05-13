@@ -14,6 +14,14 @@ public class StockChartResDTO {
       String currency,
       List<DataPoint> data) {}
 
+  public record Update(
+      String ticker,
+      String range,
+      StockChartType type,
+      StockChartInterval interval,
+      String currency,
+      DataPoint point) {}
+
   public record DataPoint(
       String time, Long price, Long open, Long high, Long low, Long close, Long volume) {}
 }
