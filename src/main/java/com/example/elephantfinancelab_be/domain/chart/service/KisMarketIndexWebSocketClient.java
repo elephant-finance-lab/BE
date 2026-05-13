@@ -1,6 +1,7 @@
 package com.example.elephantfinancelab_be.domain.chart.service;
 
 import com.example.elephantfinancelab_be.domain.chart.entity.MarketIndexMarket;
+import com.example.elephantfinancelab_be.domain.chart.exception.code.ChartErrorCode;
 import com.example.elephantfinancelab_be.global.config.KisProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -56,7 +57,10 @@ public class KisMarketIndexWebSocketClient {
     }
 
     if (!hasText(kisProperties.getAppKey()) || !hasText(kisProperties.getAppSecret())) {
-      log.warn("한국투자증권 인증 정보가 없어 시장 지수 웹소켓 연결을 건너뜁니다.");
+      log.warn(
+          "code={}, message={}, reason=missing-kis-credentials",
+          ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getCode(),
+          ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getMessage());
       return;
     }
 
@@ -89,14 +93,22 @@ public class KisMarketIndexWebSocketClient {
           .whenComplete(
               (socket, throwable) -> {
                 if (throwable != null) {
-                  log.warn("한국투자증권 시장 지수 웹소켓 연결에 실패했습니다.", throwable);
+                  log.warn(
+                      "code={}, message={}",
+                      ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getCode(),
+                      ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getMessage(),
+                      throwable);
                   scheduleReconnect();
                   return;
                 }
                 webSocket = socket;
               });
     } catch (RuntimeException e) {
-      log.warn("한국투자증권 시장 지수 웹소켓 연결 준비에 실패했습니다.", e);
+      log.warn(
+          "code={}, message={}, phase=prepare-connect",
+          ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getCode(),
+          ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getMessage(),
+          e);
       scheduleReconnect();
     }
   }
@@ -123,13 +135,23 @@ public class KisMarketIndexWebSocketClient {
           .whenComplete(
               (unused, throwable) -> {
                 if (throwable != null) {
-                  log.warn("한국투자증권 시장 지수 구독에 실패했습니다. market={}", market.name(), throwable);
+                  log.warn(
+                      "code={}, message={}, market={}",
+                      ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getCode(),
+                      ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getMessage(),
+                      market.name(),
+                      throwable);
                   return;
                 }
                 log.info("한국투자증권 시장 지수 구독 완료. market={}", market.name());
               });
     } catch (JsonProcessingException e) {
-      log.warn("한국투자증권 시장 지수 구독 메시지 생성에 실패했습니다. market={}", market.name(), e);
+      log.warn(
+          "code={}, message={}, market={}",
+          ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getCode(),
+          ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getMessage(),
+          market.name(),
+          e);
     }
   }
 
@@ -220,7 +242,11 @@ public class KisMarketIndexWebSocketClient {
         try {
           handleMessage(textBuffer.toString());
         } catch (RuntimeException e) {
-          log.warn("한국투자증권 시장 지수 메시지 처리 중 오류가 발생했습니다.", e);
+          log.warn(
+              "code={}, message={}, phase=handle-message",
+              ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getCode(),
+              ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getMessage(),
+              e);
         } finally {
           textBuffer.setLength(0);
         }
@@ -231,14 +257,23 @@ public class KisMarketIndexWebSocketClient {
 
     @Override
     public CompletionStage<?> onClose(WebSocket socket, int statusCode, String reason) {
-      log.warn("한국투자증권 시장 지수 웹소켓 연결 종료. statusCode={}, reason={}", statusCode, reason);
+      log.warn(
+          "code={}, message={}, statusCode={}, reason={}",
+          ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getCode(),
+          ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getMessage(),
+          statusCode,
+          reason);
       scheduleReconnect();
       return CompletableFuture.completedFuture(null);
     }
 
     @Override
     public void onError(WebSocket socket, Throwable error) {
-      log.warn("한국투자증권 시장 지수 웹소켓 오류가 발생했습니다.", error);
+      log.warn(
+          "code={}, message={}",
+          ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getCode(),
+          ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getMessage(),
+          error);
       scheduleReconnect();
     }
   }

@@ -2,6 +2,7 @@ package com.example.elephantfinancelab_be.domain.chart.service;
 
 import com.example.elephantfinancelab_be.domain.chart.dto.res.MarketIndexResDTO;
 import com.example.elephantfinancelab_be.domain.chart.entity.MarketIndexMarket;
+import com.example.elephantfinancelab_be.domain.chart.exception.code.ChartErrorCode;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -48,13 +49,20 @@ public class MarketIndexRealtimeParser {
     }
 
     if ("1".equals(parts[0])) {
-      log.warn("암호화된 한국투자증권 실시간 지수 메시지는 처리하지 않습니다.");
+      log.warn(
+          "code={}, message={}, reason=encrypted",
+          ChartErrorCode.KIS_MARKET_INDEX_REALTIME_MESSAGE_INVALID.getCode(),
+          ChartErrorCode.KIS_MARKET_INDEX_REALTIME_MESSAGE_INVALID.getMessage());
       return List.of();
     }
 
     String[] fields = parts[3].split("\\^", -1);
     if (fields.length <= CHANGE_RATE_FIELD) {
-      log.warn("한국투자증권 실시간 지수 메시지 필드 수가 부족합니다. count={}", fields.length);
+      log.warn(
+          "code={}, message={}, count={}",
+          ChartErrorCode.KIS_MARKET_INDEX_REALTIME_MESSAGE_INVALID.getCode(),
+          ChartErrorCode.KIS_MARKET_INDEX_REALTIME_MESSAGE_INVALID.getMessage(),
+          fields.length);
       return List.of();
     }
 
@@ -63,7 +71,12 @@ public class MarketIndexRealtimeParser {
     for (int index = 0; index < dataCount; index++) {
       int offset = index * RESPONSE_FIELD_COUNT;
       if (fields.length <= offset + CHANGE_RATE_FIELD) {
-        log.warn("한국투자증권 실시간 지수 메시지 항목 필드 수가 부족합니다. item={}, count={}", index, fields.length);
+        log.warn(
+            "code={}, message={}, item={}, count={}",
+            ChartErrorCode.KIS_MARKET_INDEX_REALTIME_MESSAGE_INVALID.getCode(),
+            ChartErrorCode.KIS_MARKET_INDEX_REALTIME_MESSAGE_INVALID.getMessage(),
+            index,
+            fields.length);
         break;
       }
 
@@ -101,7 +114,11 @@ public class MarketIndexRealtimeParser {
     try {
       return new BigDecimal(value.trim());
     } catch (NumberFormatException e) {
-      log.warn("한국투자증권 실시간 지수 메시지의 숫자 형식이 올바르지 않습니다. value={}", value);
+      log.warn(
+          "code={}, message={}, value={}",
+          ChartErrorCode.KIS_MARKET_INDEX_REALTIME_MESSAGE_INVALID.getCode(),
+          ChartErrorCode.KIS_MARKET_INDEX_REALTIME_MESSAGE_INVALID.getMessage(),
+          value);
       return BigDecimal.ZERO;
     }
   }

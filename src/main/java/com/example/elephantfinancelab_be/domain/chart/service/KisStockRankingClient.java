@@ -57,7 +57,8 @@ public class KisStockRankingClient {
           httpClient.send(request, HttpResponse.BodyHandlers.ofString());
       if (response.statusCode() < 200 || response.statusCode() >= 300) {
         log.warn(
-            "{} status={}",
+            "code={}, message={}, status={}",
+            ChartErrorCode.KIS_RANKING_API_FAILED.getCode(),
             ChartErrorCode.KIS_RANKING_API_FAILED.getMessage(),
             response.statusCode());
         throw new ChartException(ChartErrorCode.KIS_RANKING_API_FAILED);
@@ -66,7 +67,8 @@ public class KisStockRankingClient {
       JsonNode root = objectMapper.readTree(response.body());
       if (!"0".equals(root.path("rt_cd").asText())) {
         log.warn(
-            "{} msg_cd={}, msg={}",
+            "code={}, message={}, msg_cd={}, msg={}",
+            ChartErrorCode.KIS_RANKING_API_FAILED.getCode(),
             ChartErrorCode.KIS_RANKING_API_FAILED.getMessage(),
             root.path("msg_cd").asText(),
             root.path("msg1").asText());
@@ -147,7 +149,12 @@ public class KisStockRankingClient {
     try {
       return Integer.valueOf(normalizeNumericValue(value));
     } catch (NumberFormatException e) {
-      log.warn("한국투자증권 종목 랭킹 응답의 순위 형식이 올바르지 않습니다. field={}, value={}", fieldName, value);
+      log.warn(
+          "code={}, message={}, field={}, value={}",
+          ChartErrorCode.KIS_RANKING_RESPONSE_PARSE_FAILED.getCode(),
+          ChartErrorCode.KIS_RANKING_RESPONSE_PARSE_FAILED.getMessage(),
+          fieldName,
+          value);
       return defaultValue;
     }
   }
@@ -161,7 +168,12 @@ public class KisStockRankingClient {
     try {
       return new BigDecimal(normalizeNumericValue(value)).longValue();
     } catch (NumberFormatException e) {
-      log.warn("한국투자증권 종목 랭킹 응답의 정수 형식이 올바르지 않습니다. field={}, value={}", fieldName, value);
+      log.warn(
+          "code={}, message={}, field={}, value={}",
+          ChartErrorCode.KIS_RANKING_RESPONSE_PARSE_FAILED.getCode(),
+          ChartErrorCode.KIS_RANKING_RESPONSE_PARSE_FAILED.getMessage(),
+          fieldName,
+          value);
       return 0L;
     }
   }
@@ -175,7 +187,12 @@ public class KisStockRankingClient {
     try {
       return new BigDecimal(normalizeNumericValue(value));
     } catch (NumberFormatException e) {
-      log.warn("한국투자증권 종목 랭킹 응답의 숫자 형식이 올바르지 않습니다. field={}, value={}", fieldName, value);
+      log.warn(
+          "code={}, message={}, field={}, value={}",
+          ChartErrorCode.KIS_RANKING_RESPONSE_PARSE_FAILED.getCode(),
+          ChartErrorCode.KIS_RANKING_RESPONSE_PARSE_FAILED.getMessage(),
+          fieldName,
+          value);
       return BigDecimal.ZERO;
     }
   }

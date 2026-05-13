@@ -3,6 +3,7 @@ package com.example.elephantfinancelab_be.domain.stocks.service;
 import com.example.elephantfinancelab_be.domain.stocks.converter.StockConverter;
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.entity.Stock;
+import com.example.elephantfinancelab_be.domain.stocks.exception.code.StockErrorCode;
 import com.example.elephantfinancelab_be.domain.stocks.repository.StockRepository;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +18,7 @@ public class StockPricePushService {
 
   private final StockRepository stockRepository;
   private final StockSummaryRedisService stockSummaryRedisService;
+  private final StockChartRealtimeService stockChartRealtimeService;
   private final SimpMessagingTemplate messagingTemplate;
 
   public void updateAndPush(StockPriceRealtimeParser.ParsedStockPrice parsed) {
@@ -46,15 +48,27 @@ public class StockPricePushService {
     try {
       stockSummaryRedisService.save(summary);
     } catch (RuntimeException e) {
-      log.warn("종목 요약 Redis 저장에 실패했습니다. ticker={}", stock.getTicker(), e);
+      log.warn(
+          "code={}, message={}, ticker={}",
+          StockErrorCode.STOCK_SUMMARY_CACHE_SAVE_FAILED.getCode(),
+          StockErrorCode.STOCK_SUMMARY_CACHE_SAVE_FAILED.getMessage(),
+          stock.getTicker(),
+          e);
     }
 
     try {
       messagingTemplate.convertAndSend(destination(stock.getTicker()), summary);
       log.debug("종목 실시간 체결가 push 완료. ticker={}", stock.getTicker());
     } catch (RuntimeException e) {
-      log.warn("종목 실시간 체결가 push 전송에 실패했습니다. ticker={}", stock.getTicker(), e);
+      log.warn(
+          "code={}, message={}, ticker={}",
+          StockErrorCode.STOCK_PRICE_PUSH_FAILED.getCode(),
+          StockErrorCode.STOCK_PRICE_PUSH_FAILED.getMessage(),
+          stock.getTicker(),
+          e);
     }
+
+    stockChartRealtimeService.updateAndPush(stock.getTicker(), parsed);
   }
 
   private String destination(String ticker) {
