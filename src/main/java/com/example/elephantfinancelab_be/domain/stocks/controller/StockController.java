@@ -2,9 +2,11 @@ package com.example.elephantfinancelab_be.domain.stocks.controller;
 
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockChartResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockDailyPriceResDTO;
+import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockFinancialResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.service.query.StockChartQueryService;
 import com.example.elephantfinancelab_be.domain.stocks.service.query.StockDailyPriceQueryService;
+import com.example.elephantfinancelab_be.domain.stocks.service.query.StockFinancialQueryService;
 import com.example.elephantfinancelab_be.domain.stocks.service.query.StockQueryService;
 import com.example.elephantfinancelab_be.global.apiPayload.ApiResponse;
 import com.example.elephantfinancelab_be.global.apiPayload.code.GeneralSuccessCode;
@@ -28,6 +30,7 @@ public class StockController {
   private final StockQueryService stockQueryService;
   private final StockChartQueryService stockChartQueryService;
   private final StockDailyPriceQueryService stockDailyPriceQueryService;
+  private final StockFinancialQueryService stockFinancialQueryService;
 
   @Operation(summary = "종목 상세 상단 조회", description = "국내주식 종목명, 현재가, 전일 대비 정보를 조회합니다.")
   @GetMapping("/{ticker}/summary")
@@ -54,6 +57,19 @@ public class StockController {
   public ResponseEntity<ApiResponse<StockDailyPriceResDTO.DailyPrices>> getDailyPrices(
       @Parameter(description = "종목코드. 예: 005930") @PathVariable String ticker) {
     StockDailyPriceResDTO.DailyPrices result = stockDailyPriceQueryService.getDailyPrices(ticker);
+    return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
+        .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+  }
+
+  @Operation(summary = "종목 재무제표 조회", description = "손익계산서, 재무상태표, 재무비율 표 데이터를 조회합니다.")
+  @GetMapping("/{ticker}/financial")
+  public ResponseEntity<ApiResponse<StockFinancialResDTO.Financial>> getFinancial(
+      @Parameter(description = "종목코드. 예: 005930") @PathVariable String ticker,
+      @Parameter(description = "INCOME, BALANCE, RATIO") @RequestParam String statement,
+      @Parameter(description = "QUARTER, YEAR. 기본값 QUARTER") @RequestParam(defaultValue = "QUARTER")
+          String period) {
+    StockFinancialResDTO.Financial result =
+        stockFinancialQueryService.getFinancial(ticker, statement, period);
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
         .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }
