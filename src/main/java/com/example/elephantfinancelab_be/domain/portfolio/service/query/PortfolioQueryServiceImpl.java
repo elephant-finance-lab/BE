@@ -36,10 +36,10 @@ public class PortfolioQueryServiceImpl implements PortfolioQueryService {
 
   @Override
   public PortfolioResDTO.PositionPage findPositions(Long userId, Pageable pageable) {
-    if (!positionRepository.existsByUserId(userId)) {
+    Page<Position> positionPage = positionRepository.findAllByUserId(userId, pageable);
+    if (positionPage.isEmpty()) {
       throw new PortfolioException(PortfolioErrorCode.PORTFOLIO_NOT_FOUND);
     }
-    Page<Position> positionPage = positionRepository.findAllByUserId(userId, pageable);
     List<PortfolioResDTO.PositionDetail> details = toDetails(positionPage.getContent());
     Page<PortfolioResDTO.PositionDetail> detailPage =
         new PageImpl<>(details, pageable, positionPage.getTotalElements());

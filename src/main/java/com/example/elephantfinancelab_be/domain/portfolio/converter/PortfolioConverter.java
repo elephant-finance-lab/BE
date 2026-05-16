@@ -17,7 +17,10 @@ public final class PortfolioConverter {
         stockSummary != null ? stockSummary.getCurrentPriceKrw() : position.getAvgBuyPrice();
     long evalAmount = currentPrice * position.getQuantity();
     long profitAmount = evalAmount - position.getTotalBuyAmount();
-    double profitRate = (double) profitAmount / position.getTotalBuyAmount() * 100;
+    double profitRate =
+        position.getTotalBuyAmount() == 0
+            ? 0
+            : Math.round((double) profitAmount / position.getTotalBuyAmount() * 10000.0) / 100.0;
 
     return PortfolioResDTO.PositionDetail.builder()
         .positionId(position.getId())
@@ -29,7 +32,7 @@ public final class PortfolioConverter {
         .totalBuyAmount(position.getTotalBuyAmount())
         .evalAmount(evalAmount)
         .profitAmount(profitAmount)
-        .profitRate(Math.round(profitRate * 100.0) / 100.0)
+        .profitRate(profitRate)
         .openedAt(position.getOpenedAt())
         .build();
   }
