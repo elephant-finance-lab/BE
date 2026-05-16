@@ -3,9 +3,11 @@ package com.example.elephantfinancelab_be.domain.portfolio.service.query;
 import com.example.elephantfinancelab_be.domain.portfolio.converter.PortfolioConverter;
 import com.example.elephantfinancelab_be.domain.portfolio.dto.res.PortfolioResDTO;
 import com.example.elephantfinancelab_be.domain.portfolio.entity.Position;
+import com.example.elephantfinancelab_be.domain.portfolio.entity.TradeType;
 import com.example.elephantfinancelab_be.domain.portfolio.exception.PortfolioException;
 import com.example.elephantfinancelab_be.domain.portfolio.exception.code.PortfolioErrorCode;
 import com.example.elephantfinancelab_be.domain.portfolio.repository.PositionRepository;
+import com.example.elephantfinancelab_be.domain.portfolio.repository.TradeRepository;
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.service.StockSummaryRedisService;
 import java.util.List;
@@ -22,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class PortfolioQueryServiceImpl implements PortfolioQueryService {
 
   private final PositionRepository positionRepository;
+  private final TradeRepository tradeRepository;
   private final StockSummaryRedisService stockSummaryRedisService;
 
   @Override
@@ -44,6 +47,13 @@ public class PortfolioQueryServiceImpl implements PortfolioQueryService {
     Page<PortfolioResDTO.PositionDetail> detailPage =
         new PageImpl<>(details, pageable, positionPage.getTotalElements());
     return PortfolioConverter.toPositionPage(detailPage);
+  }
+
+  @Override
+  public PortfolioResDTO.TradePage findTrades(Long userId, TradeType type, Pageable pageable) {
+    Page<com.example.elephantfinancelab_be.domain.portfolio.entity.Trade> tradePage =
+        tradeRepository.findAllByUserIdAndType(userId, type, pageable);
+    return PortfolioConverter.toTradePage(tradePage);
   }
 
   private List<PortfolioResDTO.PositionDetail> toDetails(List<Position> positions) {

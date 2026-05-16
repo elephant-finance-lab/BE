@@ -2,6 +2,7 @@ package com.example.elephantfinancelab_be.domain.portfolio.converter;
 
 import com.example.elephantfinancelab_be.domain.portfolio.dto.res.PortfolioResDTO;
 import com.example.elephantfinancelab_be.domain.portfolio.entity.Position;
+import com.example.elephantfinancelab_be.domain.portfolio.entity.Trade;
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockResDTO;
 import java.util.List;
 import lombok.AccessLevel;
@@ -81,6 +82,28 @@ public final class PortfolioConverter {
         .totalPages(page.getTotalPages())
         .hasNext(page.hasNext())
         .positions(page.getContent())
+        .build();
+  }
+
+  public static PortfolioResDTO.TradeDetail toTradeDetail(Trade trade) {
+    return PortfolioResDTO.TradeDetail.builder()
+        .tradeId(trade.getId())
+        .tickerCode(trade.getTickerCode())
+        .companyName(trade.getCompanyName())
+        .type(trade.getType())
+        .quantity(trade.getQuantity())
+        .price(trade.getPrice())
+        .totalAmount(trade.getTotalAmount())
+        .tradedAt(trade.getTradedAt())
+        .build();
+  }
+
+  public static PortfolioResDTO.TradePage toTradePage(Page<Trade> page) {
+    return PortfolioResDTO.TradePage.builder()
+        .page(page.getNumber())
+        .size(page.getSize())
+        .hasNext(page.hasNext())
+        .trades(page.getContent().stream().map(PortfolioConverter::toTradeDetail).toList())
         .build();
   }
 }

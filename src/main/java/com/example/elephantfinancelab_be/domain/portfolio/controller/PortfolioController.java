@@ -1,6 +1,7 @@
 package com.example.elephantfinancelab_be.domain.portfolio.controller;
 
 import com.example.elephantfinancelab_be.domain.portfolio.dto.res.PortfolioResDTO;
+import com.example.elephantfinancelab_be.domain.portfolio.entity.TradeType;
 import com.example.elephantfinancelab_be.domain.portfolio.service.query.PortfolioQueryService;
 import com.example.elephantfinancelab_be.domain.user.entity.User;
 import com.example.elephantfinancelab_be.domain.user.exception.UserException;
@@ -56,6 +57,19 @@ public class PortfolioController {
       @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
     PortfolioResDTO.PositionPage result =
         portfolioQueryService.findPositions(resolveUserId(email), PageRequest.of(page, size));
+    return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
+        .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+  }
+
+  @Operation(summary = "거래 기록 조회", description = "사용자의 매수 및 매도 거래 기록을 조회합니다.")
+  @GetMapping("/trades")
+  public ResponseEntity<ApiResponse<PortfolioResDTO.TradePage>> getTrades(
+      @AuthenticationPrincipal String email,
+      @RequestParam(defaultValue = "BUY") TradeType type,
+      @RequestParam(defaultValue = "0") @Min(0) int page,
+      @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+    PortfolioResDTO.TradePage result =
+        portfolioQueryService.findTrades(resolveUserId(email), type, PageRequest.of(page, size));
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
         .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }
