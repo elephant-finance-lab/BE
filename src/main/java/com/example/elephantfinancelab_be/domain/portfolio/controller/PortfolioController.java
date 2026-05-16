@@ -10,12 +10,16 @@ import com.example.elephantfinancelab_be.global.apiPayload.ApiResponse;
 import com.example.elephantfinancelab_be.global.apiPayload.code.GeneralSuccessCode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+@Validated
 @Tag(name = "Portfolio", description = "포트폴리오 관련 API")
 @RestController
 @RequiredArgsConstructor
@@ -48,8 +52,8 @@ public class PortfolioController {
   @GetMapping("/positions")
   public ResponseEntity<ApiResponse<PortfolioResDTO.PositionPage>> getPositions(
       @AuthenticationPrincipal String email,
-      @RequestParam(defaultValue = "0") int page,
-      @RequestParam(defaultValue = "20") int size) {
+      @RequestParam(defaultValue = "0") @Min(0) int page,
+      @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
     PortfolioResDTO.PositionPage result =
         portfolioQueryService.findPositions(resolveUserId(email), PageRequest.of(page, size));
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
