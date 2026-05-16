@@ -65,7 +65,7 @@ public class PortfolioController {
   @GetMapping("/trades")
   public ResponseEntity<ApiResponse<PortfolioResDTO.TradePage>> getTrades(
       @AuthenticationPrincipal String email,
-      @RequestParam(defaultValue = "BUY") TradeType type,
+      @RequestParam(required = false) TradeType type,
       @RequestParam(defaultValue = "0") @Min(0) int page,
       @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
     PortfolioResDTO.TradePage result =
