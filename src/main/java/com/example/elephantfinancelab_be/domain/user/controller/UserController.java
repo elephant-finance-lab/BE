@@ -66,4 +66,13 @@ public class UserController {
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
         .body(ApiResponse.of(GeneralSuccessCode.OK));
   }
+
+  @Operation(summary = "기본 정보 입력", description = "소셜로그인 이후 최초 1회 사용자 기본 정보를 입력합니다.")
+  @PostMapping("/me")
+  public ResponseEntity<ApiResponse<UserResDTO.UserId>> registerUserInfo(
+      @AuthenticationPrincipal String email, @Valid @RequestBody UserReqDTO.RegisterInfo request) {
+    UserResDTO.UserId result = userCommandService.saveUserInfo(resolveUserId(email), request);
+    return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
+        .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+  }
 }
