@@ -44,7 +44,12 @@ public class UserCommandServiceImpl implements UserCommandService {
   @Override
   public UserResDTO.UserId saveUserInfo(Long userId, UserReqDTO.RegisterInfo request) {
     User user = findActiveUser(userId);
-    String normalizedPhone = normalizePhone(request.getPhoneNumber());
+
+    if (user.getPhone() != null) {
+      throw new UserException(UserErrorCode.ALREADY_REGISTERED);
+    }
+
+    String normalizedPhone = normalizePhone(request.getPhone());
     if (userRepository.existsByPhoneAndIdNot(normalizedPhone, userId)) {
       throw new UserException(UserErrorCode.DUPLICATE_PHONE);
     }

@@ -69,7 +69,7 @@ public class UserReqDTO {
     @NotBlank(message = "전화번호는 필수입니다.")
     @Pattern(regexp = "^01[0-9]-?[0-9]{3,4}-?[0-9]{4}$", message = "올바른 휴대폰 번호 형식이 아닙니다.")
     @Size(max = 20, message = "전화번호는 20자 이하여야 합니다.")
-    private String phoneNumber;
+    private String phone;
 
     @NotBlank(message = "계좌번호는 필수입니다.")
     @Size(max = 50, message = "계좌번호는 50자 이하여야 합니다.")
