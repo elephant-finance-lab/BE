@@ -74,7 +74,8 @@ public class KisAccessTokenClient {
 
       if (response.statusCode() < 200 || response.statusCode() >= 300) {
         log.warn(
-            "{} status={}",
+            "code={}, message={}, status={}",
+            ChartErrorCode.KIS_ACCESS_TOKEN_FAILED.getCode(),
             ChartErrorCode.KIS_ACCESS_TOKEN_FAILED.getMessage(),
             response.statusCode());
         throw new ChartException(ChartErrorCode.KIS_ACCESS_TOKEN_FAILED);
@@ -130,7 +131,10 @@ public class KisAccessTokenClient {
       }
     }
 
-    log.warn("한국투자증권 접근 토큰 발급 대기 시간이 초과되었습니다.");
+    log.warn(
+        "code={}, message={}, reason=wait-timeout",
+        ChartErrorCode.KIS_ACCESS_TOKEN_FAILED.getCode(),
+        ChartErrorCode.KIS_ACCESS_TOKEN_FAILED.getMessage());
     throw new ChartException(ChartErrorCode.KIS_ACCESS_TOKEN_FAILED);
   }
 

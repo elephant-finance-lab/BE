@@ -1,5 +1,7 @@
 package com.example.elephantfinancelab_be.global.bootstrap;
 
+import com.example.elephantfinancelab_be.domain.stocks.entity.Stock;
+import com.example.elephantfinancelab_be.domain.stocks.repository.StockRepository;
 import com.example.elephantfinancelab_be.domain.terms.entity.TermsType;
 import com.example.elephantfinancelab_be.domain.terms.entity.UserTermsAgreement;
 import com.example.elephantfinancelab_be.domain.terms.repository.UserTermsAgreementRepository;
@@ -8,6 +10,7 @@ import com.example.elephantfinancelab_be.domain.user.entity.Provider;
 import com.example.elephantfinancelab_be.domain.user.entity.User;
 import com.example.elephantfinancelab_be.domain.user.repository.UserRepository;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;
@@ -26,9 +29,12 @@ public class DevDataLoader implements ApplicationRunner {
 
   private final UserRepository userRepository;
   private final UserTermsAgreementRepository userTermsAgreementRepository;
+  private final StockRepository stockRepository;
 
   @Override
   public void run(ApplicationArguments args) {
+    seedStocksIfMissing();
+
     User user = userRepository.findById(DEV_USER_ID).orElse(null);
     if (user == null) {
       if (userRepository.count() > 0) {
@@ -47,6 +53,7 @@ public class DevDataLoader implements ApplicationRunner {
         .uuid(DEV_USER_UUID)
         .provider(Provider.GOOGLE)
         .providerUserId("dev-google-provider-user-id")
+        .email("dev@elephant.com")
         .name("김이박")
         .phone("01012345678")
         .gender(Gender.MALE)
@@ -72,5 +79,20 @@ public class DevDataLoader implements ApplicationRunner {
               .agreedAt(now)
               .build());
     }
+  }
+
+  private void seedStocksIfMissing() {
+    if (stockRepository.count() > 0) {
+      return;
+    }
+
+    stockRepository.saveAll(
+        List.of(
+            Stock.builder().ticker("005930").name("삼성전자").build(),
+            Stock.builder().ticker("000660").name("SK하이닉스").build(),
+            Stock.builder().ticker("035420").name("NAVER").build(),
+            Stock.builder().ticker("035720").name("카카오").build(),
+            Stock.builder().ticker("005380").name("현대차").build(),
+            Stock.builder().ticker("373220").name("LG에너지솔루션").build()));
   }
 }

@@ -57,7 +57,12 @@ public class StockRankingService {
     try {
       return objectMapper.readValue(json, RankingResDTO.RankingResponse.class);
     } catch (JsonProcessingException e) {
-      log.warn("종목 랭킹 캐시 역직렬화에 실패했습니다. key={}", type.getRedisKey(), e);
+      log.warn(
+          "code={}, message={}, key={}",
+          ChartErrorCode.RANKING_CACHE_DESERIALIZE_FAILED.getCode(),
+          ChartErrorCode.RANKING_CACHE_DESERIALIZE_FAILED.getMessage(),
+          type.getRedisKey(),
+          e);
       return null;
     }
   }
