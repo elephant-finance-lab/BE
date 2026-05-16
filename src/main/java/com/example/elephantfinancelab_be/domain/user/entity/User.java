@@ -78,4 +78,10 @@ public class User extends BaseEntity {
     this.active = false;
     this.deletedAt = LocalDateTime.now();
   }
+
+  public void updateInfo(String name, String phone, Gender gender) {
+    this.name = name;
+    this.phone = phone;
+    this.gender = gender;
+  }
 }

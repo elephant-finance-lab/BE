@@ -11,6 +11,7 @@ public enum UserErrorCode implements BaseErrorCode {
   USER_NOT_FOUND(HttpStatus.NOT_FOUND, "USER404_1", "사용자를 찾을 수 없습니다."),
   USER_ALREADY_DELETED(HttpStatus.GONE, "USER410_1", "이미 탈퇴한 회원입니다."),
   DUPLICATE_PHONE(HttpStatus.CONFLICT, "USER409_1", "이미 사용 중인 전화번호입니다."),
+  ALREADY_REGISTERED(HttpStatus.CONFLICT, "USER409_02", "이미 기본 정보가 등록된 사용자입니다."),
   ;
 
   private final HttpStatus status;
