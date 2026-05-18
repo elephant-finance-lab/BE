@@ -63,4 +63,12 @@ public class UserResDTO {
   public static class AccountId {
     private Long accountId;
   }
+
+  @Getter
+  @NoArgsConstructor
+  @AllArgsConstructor
+  @Builder
+  public static class UserId {
+    private Long userId;
+  }
 }

@@ -20,17 +20,17 @@ public class Account extends BaseEntity {
   @JoinColumn(name = "user_id", nullable = false)
   private User user;
 
-  @Column(name = "bank_name", nullable = false, length = 100)
+  @Column(name = "bank_name", length = 100)
   private String bankName;
 
   @Column(name = "account_number", nullable = false, length = 50, unique = true)
   private String accountNumber;
 
-  @Column(name = "account_holder", nullable = false, length = 100)
+  @Column(name = "account_holder", length = 100)
   private String accountHolder;
 
   @Enumerated(EnumType.STRING)
-  @Column(name = "account_type", nullable = false, length = 20)
+  @Column(name = "account_type", length = 20)
   private AccountType accountType;
 
   @Column(name = "is_primary", nullable = false)
