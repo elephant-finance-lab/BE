@@ -2,6 +2,7 @@ package com.example.elephantfinancelab_be.domain.user.service.command;
 
 import com.example.elephantfinancelab_be.domain.user.dto.req.UserReqDTO;
 import com.example.elephantfinancelab_be.domain.user.dto.res.UserResDTO;
+import com.example.elephantfinancelab_be.domain.user.entity.AccountType;
 import com.example.elephantfinancelab_be.domain.user.entity.User;
 import com.example.elephantfinancelab_be.domain.user.exception.UserException;
 import com.example.elephantfinancelab_be.domain.user.exception.code.UserErrorCode;
@@ -56,8 +57,14 @@ public class UserCommandServiceImpl implements UserCommandService {
     user.updateInfo(request.getName(), normalizedPhone, request.getGender());
 
     if (request.getAccountNumber() != null && !request.getAccountNumber().isBlank()) {
+      // 현재 KIS 모의투자(한국투자증권) 계좌만 지원. 추후 다른 증권사 연동 시 bankName, accountType 확장 필요
       UserReqDTO.CreateAccount accountRequest =
-          UserReqDTO.CreateAccount.builder().accountNumber(request.getAccountNumber()).build();
+          UserReqDTO.CreateAccount.builder()
+              .accountNumber(request.getAccountNumber())
+              .accountHolder(user.getName())
+              .bankName("한국투자증권")
+              .accountType(AccountType.SECURITIES)
+              .build();
       accountCommandService.saveAccount(userId, accountRequest);
     }
 

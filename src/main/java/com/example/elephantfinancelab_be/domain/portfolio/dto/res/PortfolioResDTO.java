@@ -1,5 +1,6 @@
 package com.example.elephantfinancelab_be.domain.portfolio.dto.res;
 
+import com.example.elephantfinancelab_be.domain.portfolio.entity.TradeType;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.AllArgsConstructor;
@@ -57,5 +58,29 @@ public class PortfolioResDTO {
     private Long profitAmount;
     private Double profitRate;
     private LocalDateTime openedAt;
+  }
+
+  @Getter
+  @Builder
+  @AllArgsConstructor
+  public static class TradePage {
+    private int page;
+    private int size;
+    private boolean hasNext;
+    private List<TradeDetail> trades;
+  }
+
+  @Getter
+  @Builder
+  @AllArgsConstructor
+  public static class TradeDetail {
+    private Long tradeId;
+    private String tickerCode;
+    private String companyName;
+    private TradeType type;
+    private Integer quantity;
+    private Long price;
+    private Long totalAmount;
+    private LocalDateTime tradedAt;
   }
 }
