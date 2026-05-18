@@ -55,10 +55,11 @@ public class UserCommandServiceImpl implements UserCommandService {
     }
     user.updateInfo(request.getName(), normalizedPhone, request.getGender());
 
-    // 현재 KIS 모의투자 계좌만 사용. 추후 다른 증권사/은행 연동 시 bankName, accountHolder, accountType 확장 가능
-    UserReqDTO.CreateAccount accountRequest =
-        UserReqDTO.CreateAccount.builder().accountNumber(request.getAccountNumber()).build();
-    accountCommandService.saveAccount(userId, accountRequest);
+    if (request.getAccountNumber() != null && !request.getAccountNumber().isBlank()) {
+      UserReqDTO.CreateAccount accountRequest =
+          UserReqDTO.CreateAccount.builder().accountNumber(request.getAccountNumber()).build();
+      accountCommandService.saveAccount(userId, accountRequest);
+    }
 
     return UserResDTO.UserId.builder().userId(userId).build();
   }

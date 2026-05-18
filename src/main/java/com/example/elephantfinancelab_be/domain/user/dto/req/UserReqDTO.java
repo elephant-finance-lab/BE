@@ -71,7 +71,6 @@ public class UserReqDTO {
     @Size(max = 20, message = "전화번호는 20자 이하여야 합니다.")
     private String phone;
 
-    @NotBlank(message = "계좌번호는 필수입니다.")
     @Size(max = 50, message = "계좌번호는 50자 이하여야 합니다.")
     private String accountNumber;
 
