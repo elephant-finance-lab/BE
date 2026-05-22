@@ -46,7 +46,7 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            pkill -f 'java -jar' || true
+            sudo fuser -k 8080/tcp || true
 
             cd /home/ubuntu/app
 
@@ -55,4 +55,7 @@ jobs:
             set +a
 
             JAR_FILE=$(ls -t *.jar | head -n 1)
-            nohup java -jar "$JAR_FILE" > app.log 2>&1 &
+            nohup java -jar "$JAR_FILE" > app.log 2>&1 < /dev/null &
+
+            sleep 5
+            sudo lsof -i :8080
