@@ -50,6 +50,8 @@ jobs:
           KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
           KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
           KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
+          KIS_FINANCIAL_APP_KEY: ${{ secrets.KIS_FINANCIAL_APP_KEY }}
+          KIS_FINANCIAL_APP_SECRET: ${{ secrets.KIS_FINANCIAL_APP_SECRET }}
           KIS_BASE_URL: ${{ secrets.KIS_BASE_URL }}
           KIS_WS_URL: ${{ secrets.KIS_WS_URL }}
 
