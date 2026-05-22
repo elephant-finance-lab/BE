@@ -1,0 +1,58 @@
+app:
+  seed:
+    enabled: false
+
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    show-sql: false
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+          naver:
+            client-id: ${NAVER_CLIENT_ID}
+            client-secret: ${NAVER_CLIENT_SECRET}
+          kakao:
+            client-id: ${KAKAO_CLIENT_ID}
+            client-secret: ${KAKAO_CLIENT_SECRET}
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-expiration: 1800000
+  refresh-expiration: 1209600000
+
+kis:
+  app-key: ${KIS_APP_KEY}
+  app-secret: ${KIS_APP_SECRET}
+  base-url: ${KIS_BASE_URL}
+  financial-app-key: ${KIS_FINANCIAL_APP_KEY}
+  financial-app-secret: ${KIS_FINANCIAL_APP_SECRET}
+  websocket-url: ${KIS_WS_URL}
+  websocket-enabled: ${KIS_WEBSOCKET_ENABLED}
+
+logging:
+  level:
+    org.springframework.security: DEBUG
+    com.example: DEBUG
