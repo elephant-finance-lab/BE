@@ -60,7 +60,7 @@ public class StockPriceRealtimeParser {
     }
 
     String[] fields = parts[3].split("\\^", -1);
-    if (fields.length <= CHANGE_RATE_FIELD) {
+    if (fields.length < RESPONSE_FIELD_COUNT) {
       log.warn(
           "code={}, message={}, count={}",
           StockErrorCode.KIS_STOCK_PRICE_REALTIME_MESSAGE_INVALID.getCode(),
@@ -109,7 +109,12 @@ public class StockPriceRealtimeParser {
     try {
       return Integer.parseInt(dataCount);
     } catch (NumberFormatException e) {
-      return 1;
+      log.warn(
+          "code={}, message={}, dataCount={}",
+          StockErrorCode.KIS_STOCK_PRICE_REALTIME_MESSAGE_INVALID.getCode(),
+          StockErrorCode.KIS_STOCK_PRICE_REALTIME_MESSAGE_INVALID.getMessage(),
+          dataCount);
+      return 0;
     }
   }
 

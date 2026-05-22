@@ -37,8 +37,10 @@ public class Stock extends BaseEntity {
   @PrePersist
   @PreUpdate
   private void normalizeTicker() {
-    if (ticker != null) {
-      ticker = ticker.trim().toUpperCase(Locale.ROOT);
+    String normalizedTicker = ticker == null ? null : ticker.trim().toUpperCase(Locale.ROOT);
+    if (normalizedTicker == null || normalizedTicker.isBlank()) {
+      throw new IllegalArgumentException("ticker must not be blank");
     }
+    ticker = normalizedTicker;
   }
 }

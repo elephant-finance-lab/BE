@@ -66,6 +66,16 @@ class StockPriceRealtimeParserTest {
   }
 
   @Test
+  void dropMessageWhenDataCountIsInvalid() {
+    String message =
+        "0|H0STCNT0|abc|" + item("005930", "093354", "71900", "5", "-100", "-0.14", "20230612");
+
+    var result = parser.parseAll(message);
+
+    assertThat(result).isEmpty();
+  }
+
+  @Test
   void parseKisRealtimeStockPriceMessageSkipsTruncatedItem() {
     String message = "0|H0STCNT0|001|005930^093354^71900^5^-100^-0.14";
 
