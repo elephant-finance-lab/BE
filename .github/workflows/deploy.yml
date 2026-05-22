@@ -50,12 +50,32 @@ jobs:
 
             cd /home/ubuntu/app
 
-            set -a
-            . ~/.env
-            set +a
+            if [ -f ~/.env ]; then
+              set -a
+              . ~/.env
+              set +a
+            else
+              echo "~/.env file not found"
+            fi
 
-            JAR_FILE=$(ls -t *.jar | head -n 1)
+            JAR_FILE=$(ls -t *.jar 2>/dev/null | head -n 1)
+
+            if [ -z "$JAR_FILE" ]; then
+              echo "No jar file found in /home/ubuntu/app"
+              exit 1
+            fi
+
+            echo "Starting $JAR_FILE"
             nohup java -jar "$JAR_FILE" > app.log 2>&1 < /dev/null &
 
-            sleep 5
-            sudo lsof -i :8080
+            sleep 15
+
+            if pgrep -f "java -jar.*$JAR_FILE" > /dev/null; then
+              echo "Application process is running"
+            else
+              echo "Application process is not running"
+              tail -n 100 app.log
+              exit 1
+            fi
+
+            sudo lsof -i :8080 || true
