@@ -28,8 +28,6 @@ public class StockChartRealtimeService {
   private static final DateTimeFormatter MINUTE_FORMATTER =
       DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
   private static final Duration UPDATE_LOCK_TTL = Duration.ofSeconds(3);
-  private static final Duration UPDATE_LOCK_WAIT_TIMEOUT = Duration.ofSeconds(1);
-  private static final Duration UPDATE_LOCK_RETRY_INTERVAL = Duration.ofMillis(20);
   private static final Duration INACTIVE_STATE_RETRY_INTERVAL = Duration.ofSeconds(1);
 
   private final StockChartRedisService stockChartRedisService;
@@ -99,14 +97,11 @@ public class StockChartRealtimeService {
     }
 
     String lockToken = UUID.randomUUID().toString();
+    boolean lockAcquired = false;
     try {
-      if (!acquireUpdateLock(key.ticker(), key.type(), lockToken)) {
-        log.warn(
-            "code={}, message={}, ticker={}, type={}, reason=lock-timeout",
-            StockErrorCode.STOCK_CHART_REALTIME_UPDATE_FAILED.getCode(),
-            StockErrorCode.STOCK_CHART_REALTIME_UPDATE_FAILED.getMessage(),
-            key.ticker(),
-            key.type());
+      lockAcquired = acquireUpdateLock(key.ticker(), key.type(), lockToken);
+      if (!lockAcquired) {
+        log.debug("종목 차트 flush 스킵. ticker={}, type={}, reason=lock-held", key.ticker(), key.type());
         return;
       }
 
@@ -129,26 +124,15 @@ public class StockChartRealtimeService {
           key.type(),
           e);
     } finally {
-      releaseUpdateLock(key.ticker(), key.type(), lockToken);
+      if (lockAcquired) {
+        releaseUpdateLock(key.ticker(), key.type(), lockToken);
+      }
     }
   }
 
   private boolean acquireUpdateLock(String ticker, StockChartType type, String lockToken) {
-    long deadline = System.nanoTime() + UPDATE_LOCK_WAIT_TIMEOUT.toNanos();
-    while (System.nanoTime() <= deadline) {
-      if (stockChartRedisService.acquireUpdateLock(
-          ticker, StockChartRange.ONE_DAY, type, lockToken, UPDATE_LOCK_TTL)) {
-        return true;
-      }
-
-      try {
-        Thread.sleep(UPDATE_LOCK_RETRY_INTERVAL.toMillis());
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        return false;
-      }
-    }
-    return false;
+    return stockChartRedisService.acquireUpdateLock(
+        ticker, StockChartRange.ONE_DAY, type, lockToken, UPDATE_LOCK_TTL);
   }
 
   private void releaseUpdateLock(String ticker, StockChartType type, String lockToken) {

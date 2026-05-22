@@ -3,11 +3,9 @@ package com.example.elephantfinancelab_be.domain.user.service.command;
 import com.example.elephantfinancelab_be.domain.user.dto.req.UserReqDTO;
 import com.example.elephantfinancelab_be.domain.user.dto.res.UserResDTO;
 
-public interface UserCommandService {
+public interface AccountCommandService {
 
-  void updateProfile(Long userId, UserReqDTO.UpdateProfile request);
+  UserResDTO.AccountId saveAccount(Long userId, UserReqDTO.CreateAccount request);
 
-  void withdraw(Long userId);
-
-  UserResDTO.UserId saveUserInfo(Long userId, UserReqDTO.RegisterInfo request);
+  void deleteAccount(Long userId, Long accountId);
 }

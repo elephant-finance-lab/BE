@@ -75,11 +75,12 @@ public class StockPriceRealtimeParser {
       int offset = index * RESPONSE_FIELD_COUNT;
       if (fields.length < offset + RESPONSE_FIELD_COUNT) {
         log.warn(
-            "code={}, message={}, item={}, count={}",
+            "code={}, message={}, item={}, count={}, expectedAtLeast={}",
             StockErrorCode.KIS_STOCK_PRICE_REALTIME_MESSAGE_INVALID.getCode(),
             StockErrorCode.KIS_STOCK_PRICE_REALTIME_MESSAGE_INVALID.getMessage(),
             index,
-            fields.length);
+            fields.length,
+            offset + RESPONSE_FIELD_COUNT);
         break;
       }
       prices.add(toParsedStockPrice(fields, offset));

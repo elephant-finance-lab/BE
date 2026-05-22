@@ -252,6 +252,7 @@ public class KisStockPriceWebSocketClient {
     public void onOpen(WebSocket socket) {
       log.info("한국투자증권 종목 체결가 웹소켓 연결 완료");
       WebSocket.Listener.super.onOpen(socket);
+      socket.request(1);
       subscribedTickers.forEach(ticker -> subscribe(socket, approvalKey, ticker));
     }
 
