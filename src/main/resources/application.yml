@@ -86,6 +86,8 @@ kis:
   app-key: ${KIS_APP_KEY}
   app-secret: ${KIS_APP_SECRET}
   base-url: ${KIS_BASE_URL:https://openapi.koreainvestment.com:9443}
+  financial-app-key: ${KIS_FINANCIAL_APP_KEY}
+  financial-app-secret: ${KIS_FINANCIAL_APP_SECRET}
   websocket-url: ${KIS_WS_URL:ws://ops.koreainvestment.com:21000}
 
 logging:

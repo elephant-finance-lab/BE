@@ -116,32 +116,34 @@ public class KisStockChartClient {
         ticker,
         TIME_ITEM_CHART_TR_ID,
         inputHour);
-    return webClient
-        .get()
-        .uri(
-            uriBuilder ->
-                uriBuilder
-                    .path(TIME_ITEM_CHART_PATH)
-                    .queryParam("FID_COND_MRKT_DIV_CODE", KRX_MARKET_DIV_CODE)
-                    .queryParam("FID_INPUT_ISCD", ticker)
-                    .queryParam("FID_INPUT_HOUR_1", inputHour)
-                    .queryParam("FID_PW_DATA_INCU_YN", "Y")
-                    .queryParam("FID_ETC_CLS_CODE", "")
-                    .build())
-        .headers(headers -> applyKisHeaders(headers, TIME_ITEM_CHART_TR_ID))
-        .retrieve()
-        .onStatus(
-            status -> status.isError(),
-            response ->
-                response
-                    .bodyToMono(String.class)
-                    .defaultIfEmpty("")
-                    .map(body -> stockChartApiException(response.statusCode().value(), body)))
-        .bodyToMono(String.class)
-        .map(this::readTree)
-        .timeout(REQUEST_TIMEOUT)
-        .onErrorMap(this::mapStockChartException)
-        .block();
+    JsonNode root =
+        webClient
+            .get()
+            .uri(
+                uriBuilder ->
+                    uriBuilder
+                        .path(TIME_ITEM_CHART_PATH)
+                        .queryParam("FID_COND_MRKT_DIV_CODE", KRX_MARKET_DIV_CODE)
+                        .queryParam("FID_INPUT_ISCD", ticker)
+                        .queryParam("FID_INPUT_HOUR_1", inputHour)
+                        .queryParam("FID_PW_DATA_INCU_YN", "Y")
+                        .queryParam("FID_ETC_CLS_CODE", "")
+                        .build())
+            .headers(headers -> applyKisHeaders(headers, TIME_ITEM_CHART_TR_ID))
+            .retrieve()
+            .onStatus(
+                status -> status.isError(),
+                response ->
+                    response
+                        .bodyToMono(String.class)
+                        .defaultIfEmpty("")
+                        .map(body -> stockChartApiException(response.statusCode().value(), body)))
+            .bodyToMono(String.class)
+            .map(this::readTree)
+            .timeout(REQUEST_TIMEOUT)
+            .onErrorMap(this::mapStockChartException)
+            .block();
+    return requireKisResponse(root, StockErrorCode.KIS_STOCK_CHART_API_FAILED);
   }
 
   private JsonNode fetchPeriodChart(String ticker, StockChartRange range) {
@@ -154,33 +156,35 @@ public class KisStockChartClient {
         startDate.format(KIS_DATE_FORMATTER),
         today.format(KIS_DATE_FORMATTER),
         range.getKisPeriodDivCode());
-    return webClient
-        .get()
-        .uri(
-            uriBuilder ->
-                uriBuilder
-                    .path(DAILY_ITEM_CHART_PATH)
-                    .queryParam("FID_COND_MRKT_DIV_CODE", KRX_MARKET_DIV_CODE)
-                    .queryParam("FID_INPUT_ISCD", ticker)
-                    .queryParam("FID_INPUT_DATE_1", startDate.format(KIS_DATE_FORMATTER))
-                    .queryParam("FID_INPUT_DATE_2", today.format(KIS_DATE_FORMATTER))
-                    .queryParam("FID_PERIOD_DIV_CODE", range.getKisPeriodDivCode())
-                    .queryParam("FID_ORG_ADJ_PRC", ADJUSTED_PRICE)
-                    .build())
-        .headers(headers -> applyKisHeaders(headers, DAILY_ITEM_CHART_TR_ID))
-        .retrieve()
-        .onStatus(
-            status -> status.isError(),
-            response ->
-                response
-                    .bodyToMono(String.class)
-                    .defaultIfEmpty("")
-                    .map(body -> stockChartApiException(response.statusCode().value(), body)))
-        .bodyToMono(String.class)
-        .map(this::readTree)
-        .timeout(REQUEST_TIMEOUT)
-        .onErrorMap(this::mapStockChartException)
-        .block();
+    JsonNode root =
+        webClient
+            .get()
+            .uri(
+                uriBuilder ->
+                    uriBuilder
+                        .path(DAILY_ITEM_CHART_PATH)
+                        .queryParam("FID_COND_MRKT_DIV_CODE", KRX_MARKET_DIV_CODE)
+                        .queryParam("FID_INPUT_ISCD", ticker)
+                        .queryParam("FID_INPUT_DATE_1", startDate.format(KIS_DATE_FORMATTER))
+                        .queryParam("FID_INPUT_DATE_2", today.format(KIS_DATE_FORMATTER))
+                        .queryParam("FID_PERIOD_DIV_CODE", range.getKisPeriodDivCode())
+                        .queryParam("FID_ORG_ADJ_PRC", ADJUSTED_PRICE)
+                        .build())
+            .headers(headers -> applyKisHeaders(headers, DAILY_ITEM_CHART_TR_ID))
+            .retrieve()
+            .onStatus(
+                status -> status.isError(),
+                response ->
+                    response
+                        .bodyToMono(String.class)
+                        .defaultIfEmpty("")
+                        .map(body -> stockChartApiException(response.statusCode().value(), body)))
+            .bodyToMono(String.class)
+            .map(this::readTree)
+            .timeout(REQUEST_TIMEOUT)
+            .onErrorMap(this::mapStockChartException)
+            .block();
+    return requireKisResponse(root, StockErrorCode.KIS_STOCK_CHART_API_FAILED);
   }
 
   private JsonNode fetchCurrentDailyPrice(String ticker) {
@@ -189,31 +193,35 @@ public class KisStockChartClient {
         ticker,
         CURRENT_DAILY_PRICE_TR_ID,
         DAILY_PERIOD_DIV_CODE);
-    return webClient
-        .get()
-        .uri(
-            uriBuilder ->
-                uriBuilder
-                    .path(CURRENT_DAILY_PRICE_PATH)
-                    .queryParam("FID_COND_MRKT_DIV_CODE", KRX_MARKET_DIV_CODE)
-                    .queryParam("FID_INPUT_ISCD", ticker)
-                    .queryParam("FID_PERIOD_DIV_CODE", DAILY_PERIOD_DIV_CODE)
-                    .queryParam("FID_ORG_ADJ_PRC", ADJUSTED_PRICE)
-                    .build())
-        .headers(headers -> applyKisHeaders(headers, CURRENT_DAILY_PRICE_TR_ID))
-        .retrieve()
-        .onStatus(
-            status -> status.isError(),
-            response ->
-                response
-                    .bodyToMono(String.class)
-                    .defaultIfEmpty("")
-                    .map(body -> stockDailyPriceApiException(response.statusCode().value(), body)))
-        .bodyToMono(String.class)
-        .map(this::readDailyPriceTree)
-        .timeout(REQUEST_TIMEOUT)
-        .onErrorMap(this::mapStockDailyPriceException)
-        .block();
+    JsonNode root =
+        webClient
+            .get()
+            .uri(
+                uriBuilder ->
+                    uriBuilder
+                        .path(CURRENT_DAILY_PRICE_PATH)
+                        .queryParam("FID_COND_MRKT_DIV_CODE", KRX_MARKET_DIV_CODE)
+                        .queryParam("FID_INPUT_ISCD", ticker)
+                        .queryParam("FID_PERIOD_DIV_CODE", DAILY_PERIOD_DIV_CODE)
+                        .queryParam("FID_ORG_ADJ_PRC", ADJUSTED_PRICE)
+                        .build())
+            .headers(headers -> applyKisHeaders(headers, CURRENT_DAILY_PRICE_TR_ID))
+            .retrieve()
+            .onStatus(
+                status -> status.isError(),
+                response ->
+                    response
+                        .bodyToMono(String.class)
+                        .defaultIfEmpty("")
+                        .map(
+                            body ->
+                                stockDailyPriceApiException(response.statusCode().value(), body)))
+            .bodyToMono(String.class)
+            .map(this::readDailyPriceTree)
+            .timeout(REQUEST_TIMEOUT)
+            .onErrorMap(this::mapStockDailyPriceException)
+            .block();
+    return requireKisResponse(root, StockErrorCode.KIS_STOCK_DAILY_PRICE_API_FAILED);
   }
 
   private void applyKisHeaders(HttpHeaders headers, String trId) {
@@ -270,6 +278,16 @@ public class KisStockChartClient {
         throwable.getClass().getSimpleName(),
         throwable.getMessage());
     return new StockException(StockErrorCode.KIS_STOCK_DAILY_PRICE_API_FAILED, throwable);
+  }
+
+  private JsonNode requireKisResponse(JsonNode root, StockErrorCode errorCode) {
+    if (root != null) {
+      return root;
+    }
+
+    log.warn(
+        "code={}, message={}, reason=empty-response", errorCode.getCode(), errorCode.getMessage());
+    throw new StockException(errorCode);
   }
 
   private JsonNode readTree(String body) {

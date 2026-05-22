@@ -18,5 +18,19 @@ public class KisProperties {
   @NotBlank private String appSecret;
   @NotBlank private String baseUrl;
   @NotBlank private String websocketUrl;
+  private String financialAppKey;
+  private String financialAppSecret;
   private boolean websocketEnabled = true;
+
+  public String getFinancialAppKeyOrDefault() {
+    return hasText(financialAppKey) ? financialAppKey : appKey;
+  }
+
+  public String getFinancialAppSecretOrDefault() {
+    return hasText(financialAppSecret) ? financialAppSecret : appSecret;
+  }
+
+  private boolean hasText(String value) {
+    return value != null && !value.isBlank();
+  }
 }

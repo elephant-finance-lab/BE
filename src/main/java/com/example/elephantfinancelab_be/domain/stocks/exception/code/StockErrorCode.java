@@ -13,6 +13,7 @@ public enum StockErrorCode implements BaseErrorCode {
   INVALID_STOCK_CHART_TYPE(HttpStatus.BAD_REQUEST, "STOCK400_2", "지원하지 않는 차트 타입입니다."),
   INVALID_STOCK_FINANCIAL_STATEMENT(HttpStatus.BAD_REQUEST, "STOCK400_3", "지원하지 않는 재무제표 타입입니다."),
   INVALID_STOCK_FINANCIAL_PERIOD(HttpStatus.BAD_REQUEST, "STOCK400_4", "지원하지 않는 재무제표 기간입니다."),
+  INVALID_STOCK_TICKER(HttpStatus.BAD_REQUEST, "STOCK400_5", "종목코드는 필수입니다."),
   STOCK_SUMMARY_CACHE_SERIALIZE_FAILED(
       HttpStatus.INTERNAL_SERVER_ERROR, "STOCK500_1", "종목 요약 캐시 저장에 실패했습니다."),
   STOCK_SUMMARY_CACHE_DESERIALIZE_FAILED(

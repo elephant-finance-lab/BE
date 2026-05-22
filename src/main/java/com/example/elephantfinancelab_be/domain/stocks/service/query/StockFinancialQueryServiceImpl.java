@@ -12,6 +12,7 @@ import com.example.elephantfinancelab_be.domain.stocks.service.KisStockFinancial
 import com.example.elephantfinancelab_be.domain.stocks.service.StockFinancialRedisService;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
@@ -92,7 +93,13 @@ public class StockFinancialQueryServiceImpl implements StockFinancialQueryServic
         nodeByApiAndPeriod(outputByApi);
     List<StockFinancialResDTO.Row> rows =
         statement.getMetrics().stream()
-            .map(metric -> toRow(metric, periodKeys, nodeByApiAndPeriod))
+            .map(
+                metric ->
+                    toRow(
+                        metric,
+                        periodKeys,
+                        nodeByApiAndPeriod,
+                        shouldConvertCumulativeToQuarterly(statement, period)))
             .toList();
 
     return new StockFinancialResDTO.Financial(
@@ -133,15 +140,51 @@ public class StockFinancialQueryServiceImpl implements StockFinancialQueryServic
   private StockFinancialResDTO.Row toRow(
       StockFinancialStatement.Metric metric,
       List<String> periodKeys,
-      Map<StockFinancialApiType, Map<String, JsonNode>> nodeByApiAndPeriod) {
+      Map<StockFinancialApiType, Map<String, JsonNode>> nodeByApiAndPeriod,
+      boolean convertCumulativeToQuarterly) {
     Map<String, JsonNode> nodeByPeriod =
         nodeByApiAndPeriod.getOrDefault(metric.apiType(), Map.of());
-    List<String> values =
-        periodKeys.stream()
-            .map(periodKey -> nodeByPeriod.get(periodKey))
-            .map(node -> node == null ? "" : financialValue(node, metric.fieldName()))
-            .toList();
+    List<String> values = new ArrayList<>();
+    BigDecimal previousValue = null;
+    String previousPeriodKey = null;
+
+    for (String periodKey : periodKeys) {
+      JsonNode node = nodeByPeriod.get(periodKey);
+      String rawValue = node == null ? null : textValue(node, metric.fieldName());
+      if (rawValue == null) {
+        values.add("");
+        previousValue = null;
+        previousPeriodKey = null;
+        continue;
+      }
+
+      if (!convertCumulativeToQuarterly) {
+        values.add(financialValue(rawValue));
+        continue;
+      }
+
+      BigDecimal currentValue = parseFinancialValue(rawValue);
+      if (currentValue == null || isMissingFinancialValue(currentValue)) {
+        values.add(currentValue == null ? financialValue(rawValue) : "");
+        previousValue = null;
+        previousPeriodKey = null;
+        continue;
+      }
+
+      BigDecimal displayValue =
+          isSameYear(previousPeriodKey, periodKey) && previousValue != null
+              ? currentValue.subtract(previousValue)
+              : currentValue;
+      values.add(formatFinancialValue(displayValue));
+      previousValue = currentValue;
+      previousPeriodKey = periodKey;
+    }
     return new StockFinancialResDTO.Row(metric.label(), values);
+  }
+
+  private boolean shouldConvertCumulativeToQuarterly(
+      StockFinancialStatement statement, StockFinancialPeriod period) {
+    return statement == StockFinancialStatement.INCOME && period == StockFinancialPeriod.QUARTER;
   }
 
   private String columnLabel(String periodKey, StockFinancialPeriod period) {
@@ -169,11 +212,41 @@ public class StockFinancialQueryServiceImpl implements StockFinancialQueryServic
       return "";
     }
 
-    try {
-      return new BigDecimal(value.trim().replace(",", "")).stripTrailingZeros().toPlainString();
-    } catch (NumberFormatException e) {
+    return financialValue(value);
+  }
+
+  private String financialValue(String value) {
+    BigDecimal decimal = parseFinancialValue(value);
+    if (decimal == null) {
       return value;
     }
+    if (isMissingFinancialValue(decimal)) {
+      return "";
+    }
+    return formatFinancialValue(decimal);
+  }
+
+  private BigDecimal parseFinancialValue(String value) {
+    try {
+      return new BigDecimal(value.trim().replace(",", ""));
+    } catch (NumberFormatException e) {
+      return null;
+    }
+  }
+
+  private String formatFinancialValue(BigDecimal value) {
+    return value.stripTrailingZeros().toPlainString();
+  }
+
+  private boolean isMissingFinancialValue(BigDecimal value) {
+    return BigDecimal.valueOf(99.99).compareTo(value) == 0;
+  }
+
+  private boolean isSameYear(String previousPeriodKey, String periodKey) {
+    return previousPeriodKey != null
+        && previousPeriodKey.length() >= 4
+        && periodKey.length() >= 4
+        && previousPeriodKey.substring(0, 4).equals(periodKey.substring(0, 4));
   }
 
   private String textValue(JsonNode node, String fieldName) {

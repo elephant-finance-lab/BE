@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class StockFinancialRedisService {
 
-  private static final String FINANCIAL_KEY_PREFIX = "stock:financial:";
+  private static final String FINANCIAL_KEY_PREFIX = "stock:financial:v3:";
   private static final Duration FINANCIAL_CACHE_TTL = Duration.ofHours(1);
 
   private final StringRedisTemplate stringRedisTemplate;

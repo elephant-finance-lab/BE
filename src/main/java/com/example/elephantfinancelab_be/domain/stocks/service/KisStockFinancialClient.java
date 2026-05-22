@@ -103,11 +103,14 @@ public class KisStockFinancialClient {
   }
 
   private void applyKisHeaders(HttpHeaders headers, String trId) {
+    String appKey = kisProperties.getFinancialAppKeyOrDefault();
+    String appSecret = kisProperties.getFinancialAppSecretOrDefault();
+
     headers.setContentType(
         MediaType.parseMediaType(MediaType.APPLICATION_JSON_VALUE + "; charset=utf-8"));
-    headers.setBearerAuth(accessTokenClient.getAccessToken());
-    headers.set("appkey", kisProperties.getAppKey());
-    headers.set("appsecret", kisProperties.getAppSecret());
+    headers.setBearerAuth(accessTokenClient.getAccessToken(appKey, appSecret));
+    headers.set("appkey", appKey);
+    headers.set("appsecret", appSecret);
     headers.set("tr_id", trId);
     headers.set("custtype", "P");
   }

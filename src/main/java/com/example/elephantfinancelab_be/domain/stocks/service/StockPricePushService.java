@@ -68,7 +68,16 @@ public class StockPricePushService {
           e);
     }
 
-    stockChartRealtimeService.updateAndPush(stock.getTicker(), parsed);
+    try {
+      stockChartRealtimeService.updateAndPush(stock.getTicker(), parsed);
+    } catch (RuntimeException e) {
+      log.warn(
+          "code={}, message={}, ticker={}",
+          StockErrorCode.STOCK_CHART_REALTIME_UPDATE_FAILED.getCode(),
+          StockErrorCode.STOCK_CHART_REALTIME_UPDATE_FAILED.getMessage(),
+          stock.getTicker(),
+          e);
+    }
   }
 
   private String destination(String ticker) {

@@ -11,7 +11,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum StockFinancialStatement {
   INCOME(
-      "백만원",
+      "억원",
       List.of(
           new Metric(StockFinancialApiType.INCOME, "매출액", "sale_account"),
           new Metric(StockFinancialApiType.INCOME, "매출 원가", "sale_cost"),
@@ -26,7 +26,7 @@ public enum StockFinancialStatement {
           new Metric(StockFinancialApiType.INCOME, "특별 손실", "spec_loss"),
           new Metric(StockFinancialApiType.INCOME, "당기순이익", "thtr_ntin"))),
   BALANCE(
-      "백만원",
+      "억원",
       List.of(
           new Metric(StockFinancialApiType.BALANCE, "유동자산", "cras"),
           new Metric(StockFinancialApiType.BALANCE, "고정자산", "fxas"),

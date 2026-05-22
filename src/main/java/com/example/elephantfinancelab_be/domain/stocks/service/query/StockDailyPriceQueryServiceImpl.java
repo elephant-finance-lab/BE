@@ -34,7 +34,7 @@ public class StockDailyPriceQueryServiceImpl implements StockDailyPriceQueryServ
 
   private String normalizeTicker(String ticker) {
     if (ticker == null || ticker.isBlank()) {
-      throw new StockException(StockErrorCode.STOCK_NOT_FOUND);
+      throw new StockException(StockErrorCode.INVALID_STOCK_TICKER);
     }
     return ticker.trim().toUpperCase(Locale.ROOT);
   }

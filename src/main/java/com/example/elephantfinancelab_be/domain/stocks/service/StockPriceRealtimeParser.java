@@ -108,7 +108,12 @@ public class StockPriceRealtimeParser {
     try {
       return Integer.parseInt(dataCount);
     } catch (NumberFormatException e) {
-      return 1;
+      log.warn(
+          "code={}, message={}, dataCount={}",
+          StockErrorCode.KIS_STOCK_PRICE_REALTIME_MESSAGE_INVALID.getCode(),
+          StockErrorCode.KIS_STOCK_PRICE_REALTIME_MESSAGE_INVALID.getMessage(),
+          dataCount);
+      return 0;
     }
   }
 
