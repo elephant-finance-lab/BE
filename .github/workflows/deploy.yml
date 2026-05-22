@@ -46,17 +46,7 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            sudo fuser -k 8080/tcp || true
-
             cd /home/ubuntu/app
-
-            if [ -f ~/.env ]; then
-              set -a
-              . ~/.env
-              set +a
-            else
-              echo "~/.env file not found"
-            fi
 
             JAR_FILE=$(ls -t *.jar 2>/dev/null | head -n 1)
 
@@ -65,17 +55,19 @@ jobs:
               exit 1
             fi
 
-            echo "Starting $JAR_FILE"
-            nohup java -jar "$JAR_FILE" > app.log 2>&1 < /dev/null &
+            ln -sfn "$JAR_FILE" app.jar
 
-            sleep 15
+            sudo systemctl daemon-reload
+            sudo systemctl restart elephant.service
 
-            if pgrep -f "java -jar.*$JAR_FILE" > /dev/null; then
-              echo "Application process is running"
+            sleep 10
+
+            if sudo systemctl is-active --quiet elephant.service; then
+              echo "elephant.service is running"
+              sudo systemctl status elephant.service --no-pager
             else
-              echo "Application process is not running"
-              tail -n 100 app.log
+              echo "elephant.service failed to start"
+              sudo systemctl status elephant.service --no-pager || true
+              sudo journalctl -u elephant.service -n 100 --no-pager
               exit 1
             fi
-
-            sudo lsof -i :8080 || true
