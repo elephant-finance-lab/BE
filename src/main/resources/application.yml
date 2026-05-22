@@ -94,3 +94,7 @@ logging:
   level:
     org.springframework.security: DEBUG
     com.example: DEBUG
+
+ai:
+  server:
+    url: http://localhost:8000
