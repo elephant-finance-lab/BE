@@ -1,6 +1,7 @@
 package com.example.elephantfinancelab_be.domain.portfolio.converter;
 
 import com.example.elephantfinancelab_be.domain.portfolio.dto.res.PortfolioResDTO;
+import com.example.elephantfinancelab_be.domain.portfolio.entity.HoldingAiDetail;
 import com.example.elephantfinancelab_be.domain.portfolio.entity.Position;
 import com.example.elephantfinancelab_be.domain.portfolio.entity.Trade;
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockResDTO;
@@ -104,6 +105,17 @@ public final class PortfolioConverter {
         .size(page.getSize())
         .hasNext(page.hasNext())
         .trades(page.getContent().stream().map(PortfolioConverter::toTradeDetail).toList())
+        .build();
+  }
+
+  public static PortfolioResDTO.HoldingAiDetail toHoldingAiDetail(HoldingAiDetail entity) {
+    return PortfolioResDTO.HoldingAiDetail.builder()
+        .tickerCode(entity.getTickerCode())
+        .companyName(entity.getCompanyName())
+        .aiHitRate(entity.getAiHitRate())
+        .tradeReason(entity.getTradeReason())
+        .futureStrategy(entity.getFutureStrategy())
+        .generatedAt(entity.getGeneratedAt())
         .build();
   }
 }
