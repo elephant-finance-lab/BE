@@ -94,3 +94,9 @@ logging:
   level:
     org.springframework.security: DEBUG
     com.example: DEBUG
+
+ai:
+  server:
+    host: localhost
+    port: 50051
+    timeout: 5

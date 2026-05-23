@@ -40,3 +40,9 @@ kis:
   base-url: https://openapi.koreainvestment.com:9443
   websocket-url: ws://ops.koreainvestment.com:21000
   websocket-enabled: false
+
+ai:
+  server:
+    host: localhost
+    port: 50051
+    timeout: 5
