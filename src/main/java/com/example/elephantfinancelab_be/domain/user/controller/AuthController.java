@@ -2,6 +2,8 @@ package com.example.elephantfinancelab_be.domain.user.controller;
 
 import com.example.elephantfinancelab_be.domain.user.converter.UserConverter;
 import com.example.elephantfinancelab_be.domain.user.dto.res.UserResDTO;
+import com.example.elephantfinancelab_be.domain.user.entity.User;
+import com.example.elephantfinancelab_be.domain.user.repository.UserRepository;
 import com.example.elephantfinancelab_be.global.apiPayload.ApiResponse;
 import com.example.elephantfinancelab_be.global.apiPayload.code.AuthErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.code.GeneralSuccessCode;
@@ -9,6 +11,7 @@ import com.example.elephantfinancelab_be.global.util.JwtProvider;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -21,6 +24,17 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
 
   private final JwtProvider jwtProvider;
+  private final UserRepository userRepository;
+
+  private boolean isAnonymous(String principal) {
+    return principal == null || "anonymousUser".equals(principal);
+  }
+
+  private Optional<User> findUserByTokenSubject(String tokenSubject) {
+    return userRepository
+        .findByEmail(tokenSubject)
+        .or(() -> userRepository.findByProviderUserId(tokenSubject));
+  }
 
   @Operation(summary = "내 정보 조회", description = "토큰 기반으로 현재 로그인한 사용자 정보를 조회합니다.")
   @GetMapping("/me")
@@ -38,7 +52,7 @@ public class AuthController {
               ApiResponse.of(GeneralSuccessCode.OK, UserConverter.toMeRes(userIdFromToken, token)));
     }
 
-    if (email == null) {
+    if (isAnonymous(email)) {
       return ResponseEntity.status(AuthErrorCode.TOKEN_MISSING_OR_EXPIRED.getStatus())
           .body(ApiResponse.onFailure(AuthErrorCode.TOKEN_MISSING_OR_EXPIRED, null));
     }
@@ -70,7 +84,13 @@ public class AuthController {
           .body(ApiResponse.onFailure(AuthErrorCode.REFRESH_TOKEN_EXPIRED, null));
     }
 
-    String newAccessToken = jwtProvider.generateAccessToken(userId);
+    Optional<User> user = findUserByTokenSubject(userId);
+    if (user.isEmpty()) {
+      return ResponseEntity.status(AuthErrorCode.TOKEN_INVALID.getStatus())
+          .body(ApiResponse.onFailure(AuthErrorCode.TOKEN_INVALID, null));
+    }
+
+    String newAccessToken = jwtProvider.generateAccessToken(user.get().getEmail());
     response.setHeader("Authorization", "Bearer " + newAccessToken);
 
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
