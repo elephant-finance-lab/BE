@@ -34,11 +34,7 @@ public class CustomLogoutSuccessHandler extends SimpleUrlLogoutSuccessHandler {
     }
 
     String accessToken = bearer.substring(7);
-    if (!jwtProvider.validateToken(accessToken)) {
-      return;
-    }
-
-    jwtProvider.deleteRefreshToken(jwtProvider.getUserId(accessToken));
+    jwtProvider.getUserIdAllowExpired(accessToken).ifPresent(jwtProvider::deleteRefreshToken);
   }
 
   private void expireRefreshCookie(HttpServletResponse response) {

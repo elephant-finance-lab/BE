@@ -33,7 +33,8 @@ public class AuthController {
   private Optional<User> findUserByTokenSubject(String tokenSubject) {
     return userRepository
         .findByEmail(tokenSubject)
-        .or(() -> userRepository.findByProviderUserId(tokenSubject));
+        .or(() -> userRepository.findByProviderUserId(tokenSubject))
+        .filter(user -> user.isActive() && !user.isDeleted());
   }
 
   @Operation(summary = "내 정보 조회", description = "토큰 기반으로 현재 로그인한 사용자 정보를 조회합니다.")
