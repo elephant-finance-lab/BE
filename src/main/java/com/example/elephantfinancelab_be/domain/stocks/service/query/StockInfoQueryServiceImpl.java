@@ -1,0 +1,131 @@
+package com.example.elephantfinancelab_be.domain.stocks.service.query;
+
+import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockChartResDTO;
+import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockFinancialResDTO;
+import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockInfoResDTO;
+import com.example.elephantfinancelab_be.domain.stocks.entity.StockFinancialPeriod;
+import com.example.elephantfinancelab_be.domain.stocks.exception.StockException;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Set;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
+
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class StockInfoQueryServiceImpl implements StockInfoQueryService {
+
+  private static final String LINE_CHART_TYPE = "LINE";
+  private static final String ONE_DAY_RANGE = "1D";
+  private static final String ONE_YEAR_RANGE = "1Y";
+  private static final String INCOME_STATEMENT = "INCOME";
+  private static final Set<String> FINANCIAL_SUMMARY_LABELS = Set.of("매출액", "매출 총 이익", "당기순이익");
+
+  private final StockChartQueryService stockChartQueryService;
+  private final StockFinancialQueryService stockFinancialQueryService;
+
+  @Override
+  public Mono<StockInfoResDTO.Info> getInfo(String ticker, String period) {
+    StockFinancialPeriod financialPeriod = StockFinancialPeriod.from(period);
+    Mono<StockChartResDTO.Chart> oneDayChartMono =
+        blockingMono(() -> stockChartQueryService.getChart(ticker, ONE_DAY_RANGE, LINE_CHART_TYPE));
+    Mono<StockChartResDTO.Chart> oneYearChartMono =
+        blockingMono(
+            () -> stockChartQueryService.getChart(ticker, ONE_YEAR_RANGE, LINE_CHART_TYPE));
+    Mono<StockFinancialResDTO.Financial> financialMono =
+        blockingMono(
+            () ->
+                stockFinancialQueryService.getFinancial(
+                    ticker, INCOME_STATEMENT, financialPeriod.name()));
+
+    return Mono.zip(oneDayChartMono, oneYearChartMono, financialMono)
+        .map(tuple -> toInfo(tuple.getT1(), tuple.getT2(), tuple.getT3()));
+  }
+
+  private StockInfoResDTO.Info toInfo(
+      StockChartResDTO.Chart oneDayChart,
+      StockChartResDTO.Chart oneYearChart,
+      StockFinancialResDTO.Financial financial) {
+    return new StockInfoResDTO.Info(
+        financial.ticker(),
+        financial.nameKor(),
+        toPrice(oneDayChart, oneYearChart),
+        toFinancialSummary(financial));
+  }
+
+  private StockInfoResDTO.Price toPrice(
+      StockChartResDTO.Chart oneDayChart, StockChartResDTO.Chart oneYearChart) {
+    List<StockChartResDTO.DataPoint> oneDayData = oneDayChart.data();
+    StockChartResDTO.DataPoint firstPoint = firstPoint(oneDayData);
+    StockChartResDTO.DataPoint lastPoint = lastPoint(oneDayData);
+
+    return new StockInfoResDTO.Price(
+        minLowPrice(oneDayData),
+        maxHighPrice(oneDayData),
+        minLowPrice(oneYearChart.data()),
+        maxHighPrice(oneYearChart.data()),
+        firstPoint == null ? null : firstPoint.open(),
+        lastPoint == null ? null : lastPoint.close());
+  }
+
+  private StockInfoResDTO.FinancialSummary toFinancialSummary(
+      StockFinancialResDTO.Financial financial) {
+    List<StockInfoResDTO.Row> rows =
+        financial.rows().stream()
+            .filter(row -> FINANCIAL_SUMMARY_LABELS.contains(row.label()))
+            .map(row -> new StockInfoResDTO.Row(row.label(), row.values()))
+            .toList();
+    return new StockInfoResDTO.FinancialSummary(
+        financial.period(), financial.unit(), financial.columns(), rows);
+  }
+
+  private Long minLowPrice(List<StockChartResDTO.DataPoint> data) {
+    if (data == null || data.isEmpty()) {
+      return null;
+    }
+    return data.stream()
+        .map(StockChartResDTO.DataPoint::low)
+        .filter(value -> value != null)
+        .min(Comparator.naturalOrder())
+        .orElse(null);
+  }
+
+  private Long maxHighPrice(List<StockChartResDTO.DataPoint> data) {
+    if (data == null || data.isEmpty()) {
+      return null;
+    }
+    return data.stream()
+        .map(StockChartResDTO.DataPoint::high)
+        .filter(value -> value != null)
+        .max(Comparator.naturalOrder())
+        .orElse(null);
+  }
+
+  private StockChartResDTO.DataPoint firstPoint(List<StockChartResDTO.DataPoint> data) {
+    if (data == null || data.isEmpty()) {
+      return null;
+    }
+    return data.get(0);
+  }
+
+  private StockChartResDTO.DataPoint lastPoint(List<StockChartResDTO.DataPoint> data) {
+    if (data == null || data.isEmpty()) {
+      return null;
+    }
+    return data.get(data.size() - 1);
+  }
+
+  private <T> Mono<T> blockingMono(BlockingSupplier<T> supplier) {
+    return Mono.fromCallable(supplier::get).subscribeOn(Schedulers.boundedElastic());
+  }
+
+  @FunctionalInterface
+  private interface BlockingSupplier<T> {
+
+    T get() throws StockException;
+  }
+}
