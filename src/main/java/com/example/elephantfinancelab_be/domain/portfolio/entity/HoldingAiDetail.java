@@ -6,7 +6,13 @@ import java.time.LocalDateTime;
 import lombok.*;
 
 @Entity
-@Table(name = "holding_ai_details")
+@Table(
+    name = "holding_ai_details",
+    indexes = {
+      @Index(
+          name = "idx_holding_ai_detail_ticker_generated_at",
+          columnList = "ticker_code, generated_at DESC")
+    })
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)

@@ -76,15 +76,14 @@ public class PortfolioQueryServiceImpl implements PortfolioQueryService {
 
   @Override
   public PortfolioResDTO.HoldingAiDetail findHoldingDetail(Long userId, String tickerCode) {
+    String normalizedTicker = tickerCode.toUpperCase();
     positionRepository
-        .findByUserIdAndTickerCode(userId, tickerCode)
+        .findByUserIdAndTickerCode(userId, normalizedTicker)
         .orElseThrow(() -> new PortfolioException(PortfolioErrorCode.HOLDING404_01));
-
     HoldingAiDetail aiDetail =
         holdingAiDetailRepository
-            .findTopByTickerCodeOrderByGeneratedAtDesc(tickerCode)
+            .findTopByTickerCodeOrderByGeneratedAtDesc(normalizedTicker)
             .orElseThrow(() -> new PortfolioException(PortfolioErrorCode.AI_DETAIL404_01));
-
     return PortfolioConverter.toHoldingAiDetail(aiDetail);
   }
 
