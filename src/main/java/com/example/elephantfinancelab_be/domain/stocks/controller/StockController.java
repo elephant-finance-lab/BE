@@ -3,10 +3,12 @@ package com.example.elephantfinancelab_be.domain.stocks.controller;
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockChartResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockDailyPriceResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockFinancialResDTO;
+import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockInfoResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.service.query.StockChartQueryService;
 import com.example.elephantfinancelab_be.domain.stocks.service.query.StockDailyPriceQueryService;
 import com.example.elephantfinancelab_be.domain.stocks.service.query.StockFinancialQueryService;
+import com.example.elephantfinancelab_be.domain.stocks.service.query.StockInfoQueryService;
 import com.example.elephantfinancelab_be.domain.stocks.service.query.StockQueryService;
 import com.example.elephantfinancelab_be.global.apiPayload.ApiResponse;
 import com.example.elephantfinancelab_be.global.apiPayload.code.GeneralSuccessCode;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
 
 @Tag(name = "Stocks", description = "종목 관련 API")
 @RestController
@@ -31,6 +34,7 @@ public class StockController {
   private final StockChartQueryService stockChartQueryService;
   private final StockDailyPriceQueryService stockDailyPriceQueryService;
   private final StockFinancialQueryService stockFinancialQueryService;
+  private final StockInfoQueryService stockInfoQueryService;
 
   @Operation(summary = "종목 상세 상단 조회", description = "국내주식 종목명, 현재가, 전일 대비 정보를 조회합니다.")
   @GetMapping("/{ticker}/summary")
@@ -39,6 +43,20 @@ public class StockController {
     StockResDTO.Summary result = stockQueryService.getSummary(ticker);
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
         .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+  }
+
+  @Operation(summary = "종목 정보 탭 요약 조회", description = "시세 요약과 주요 재무 3개 항목을 한 번에 조회합니다.")
+  @GetMapping("/{ticker}/info")
+  public Mono<ResponseEntity<ApiResponse<StockInfoResDTO.Info>>> getInfo(
+      @Parameter(description = "종목코드. 예: 005930") @PathVariable String ticker,
+      @Parameter(description = "QUARTER, YEAR. 기본값 QUARTER") @RequestParam(defaultValue = "QUARTER")
+          String period) {
+    return stockInfoQueryService
+        .getInfo(ticker, period)
+        .map(
+            result ->
+                ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
+                    .body(ApiResponse.of(GeneralSuccessCode.OK, result)));
   }
 
   @Operation(summary = "종목 차트 시계열 조회", description = "라인/캔들 차트 초기 데이터를 조회합니다.")
