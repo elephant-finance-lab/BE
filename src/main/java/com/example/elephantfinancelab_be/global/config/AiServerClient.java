@@ -1,86 +1,108 @@
 package com.example.elephantfinancelab_be.global.config;
 
+import com.elephant.ai.v1.AgentReportEnvelope;
+import com.elephant.ai.v1.AiBeBridgeServiceGrpc;
+import com.elephant.ai.v1.ExecutionFeedbackEnvelope;
+import com.elephant.ai.v1.FinalDecisionEnvelope;
+import com.elephant.ai.v1.HealthCheckRequest;
+import com.elephant.ai.v1.HealthCheckResponse;
+import com.elephant.ai.v1.InternalMessageEnvelope;
+import com.elephant.ai.v1.PortfolioPatchEnvelope;
+import com.elephant.ai.v1.ServiceReadinessRequest;
+import com.elephant.ai.v1.ServiceReadinessResponse;
 import com.example.elephantfinancelab_be.global.apiPayload.code.AiServerErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.AiServerException;
+import io.grpc.StatusRuntimeException;
+import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatusCode;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
 
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class AiServerClient {
 
-  private final WebClient webClient;
+  private final AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stub;
 
-  public AiServerClient(
-      WebClient.Builder webClientBuilder, @Value("${ai.server.url}") String aiServerUrl) {
-    this.webClient =
-        webClientBuilder
-            .baseUrl(aiServerUrl)
-            .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
-            .filter(
-                (request, next) -> {
-                  log.debug("[AI Client] {} {}", request.method(), request.url());
-                  return next.exchange(request);
-                })
-            .build();
-
-    log.info("[AI Client] 초기화 완료 - URL: {}", aiServerUrl);
+  public HealthCheckResponse healthCheck(String bundleId) {
+    try {
+      HealthCheckRequest request =
+          HealthCheckRequest.newBuilder()
+              .setRequestId(UUID.randomUUID().toString())
+              .setBundleId(bundleId != null ? bundleId : "")
+              .build();
+      HealthCheckResponse response = stub.healthCheck(request);
+      log.info("[AI Client] 헬스체크: {}", response.getStatus());
+      return response;
+    } catch (StatusRuntimeException e) {
+      log.error("[AI Client] 헬스체크 실패: {}", e.getMessage());
+      throw new AiServerException(AiServerErrorCode.AI503_01);
+    }
   }
 
-  public <T> Mono<T> get(String path, Class<T> responseType) {
-    return webClient
-        .get()
-        .uri(path)
-        .retrieve()
-        .onStatus(
-            HttpStatusCode::is4xxClientError,
-            response -> Mono.error(new AiServerException(AiServerErrorCode.AI400_01)))
-        .onStatus(
-            HttpStatusCode::is5xxServerError,
-            response -> Mono.error(new AiServerException(AiServerErrorCode.AI500_01)))
-        .bodyToMono(responseType)
-        .doOnError(e -> log.error("[AI Client] GET {} 실패: {}", path, e.getMessage()))
-        .onErrorMap(
-            e -> !(e instanceof AiServerException),
-            e -> new AiServerException(AiServerErrorCode.AI503_01));
+  public ServiceReadinessResponse getServiceReadiness(String bundleId) {
+    try {
+      ServiceReadinessRequest request =
+          ServiceReadinessRequest.newBuilder()
+              .setRequestId(UUID.randomUUID().toString())
+              .setBundleId(bundleId != null ? bundleId : "")
+              .setIncludeDetails(true)
+              .build();
+      return stub.getServiceReadiness(request);
+    } catch (StatusRuntimeException e) {
+      log.error("[AI Client] 서비스 준비 상태 확인 실패: {}", e.getMessage());
+      throw new AiServerException(AiServerErrorCode.AI503_01);
+    }
   }
 
-  public <T> Mono<T> post(String path, Object requestBody, Class<T> responseType) {
-    return webClient
-        .post()
-        .uri(path)
-        .bodyValue(requestBody)
-        .retrieve()
-        .onStatus(
-            HttpStatusCode::is4xxClientError,
-            response -> Mono.error(new AiServerException(AiServerErrorCode.AI400_01)))
-        .onStatus(
-            HttpStatusCode::is5xxServerError,
-            response -> Mono.error(new AiServerException(AiServerErrorCode.AI500_01)))
-        .bodyToMono(responseType)
-        .doOnError(e -> log.error("[AI Client] POST {} 실패: {}", path, e.getMessage()))
-        .onErrorMap(
-            e -> !(e instanceof AiServerException),
-            e -> new AiServerException(AiServerErrorCode.AI503_01));
+  public void publishPortfolioPatch(PortfolioPatchEnvelope envelope) {
+    try {
+      stub.publishPortfolioPatch(envelope);
+      log.info("[AI Client] PortfolioPatch 전송 완료: {}", envelope.getPortfolioPatchId());
+    } catch (StatusRuntimeException e) {
+      log.error("[AI Client] PortfolioPatch 전송 실패: {}", e.getMessage());
+      throw new AiServerException(AiServerErrorCode.AI503_01);
+    }
   }
 
-  public Mono<Boolean> healthCheck() {
-    return webClient
-        .get()
-        .uri("/health")
-        .retrieve()
-        .toBodilessEntity()
-        .map(response -> response.getStatusCode().is2xxSuccessful())
-        .doOnSuccess(ok -> log.info("[AI Client] 헬스체크: {}", ok ? "정상" : "비정상"))
-        .onErrorResume(
-            e -> {
-              log.warn("[AI Client] 헬스체크 실패: {}", e.getMessage());
-              return Mono.just(false);
-            });
+  public void publishFinalDecision(FinalDecisionEnvelope envelope) {
+    try {
+      stub.publishFinalDecision(envelope);
+      log.info("[AI Client] FinalDecision 전송 완료: {}", envelope.getDecisionId());
+    } catch (StatusRuntimeException e) {
+      log.error("[AI Client] FinalDecision 전송 실패: {}", e.getMessage());
+      throw new AiServerException(AiServerErrorCode.AI503_01);
+    }
+  }
+
+  public void publishExecutionFeedback(ExecutionFeedbackEnvelope envelope) {
+    try {
+      stub.publishExecutionFeedback(envelope);
+      log.info("[AI Client] ExecutionFeedback 전송 완료: {}", envelope.getOrderPlanId());
+    } catch (StatusRuntimeException e) {
+      log.error("[AI Client] ExecutionFeedback 전송 실패: {}", e.getMessage());
+      throw new AiServerException(AiServerErrorCode.AI503_01);
+    }
+  }
+
+  public void publishInternalMessage(InternalMessageEnvelope envelope) {
+    try {
+      stub.publishInternalMessage(envelope);
+      log.info("[AI Client] InternalMessage 전송 완료: {}", envelope.getMessageId());
+    } catch (StatusRuntimeException e) {
+      log.error("[AI Client] InternalMessage 전송 실패: {}", e.getMessage());
+      throw new AiServerException(AiServerErrorCode.AI503_01);
+    }
+  }
+
+  public void publishAgentReport(AgentReportEnvelope envelope) {
+    try {
+      stub.publishAgentReport(envelope);
+      log.info("[AI Client] AgentReport 전송 완료: {}", envelope.getReportId());
+    } catch (StatusRuntimeException e) {
+      log.error("[AI Client] AgentReport 전송 실패: {}", e.getMessage());
+      throw new AiServerException(AiServerErrorCode.AI503_01);
+    }
   }
 }

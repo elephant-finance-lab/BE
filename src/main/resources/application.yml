@@ -97,4 +97,5 @@ logging:
 
 ai:
   server:
-    url: http://localhost:8000
+    host: localhost
+    port: 50051
