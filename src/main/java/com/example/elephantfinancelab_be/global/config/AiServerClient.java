@@ -12,6 +12,7 @@ import com.elephant.ai.v1.ServiceReadinessRequest;
 import com.elephant.ai.v1.ServiceReadinessResponse;
 import com.example.elephantfinancelab_be.global.apiPayload.code.AiServerErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.AiServerException;
+import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +26,21 @@ public class AiServerClient {
 
   private final AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stub;
 
+  private AiServerException mapToAiServerException(StatusRuntimeException e) {
+    log.error(
+        "[AI Client] gRPC 오류 - status: {}, message: {}", e.getStatus().getCode(), e.getMessage());
+    Status.Code code = e.getStatus().getCode();
+    return switch (code) {
+      case INVALID_ARGUMENT -> new AiServerException(AiServerErrorCode.AI400_01);
+      case DEADLINE_EXCEEDED -> new AiServerException(AiServerErrorCode.AI504_01);
+      case UNAUTHENTICATED -> new AiServerException(AiServerErrorCode.AI401_01);
+      case PERMISSION_DENIED -> new AiServerException(AiServerErrorCode.AI403_01);
+      case NOT_FOUND -> new AiServerException(AiServerErrorCode.AI404_01);
+      case INTERNAL -> new AiServerException(AiServerErrorCode.AI500_01);
+      default -> new AiServerException(AiServerErrorCode.AI503_01);
+    };
+  }
+
   public HealthCheckResponse healthCheck(String bundleId) {
     try {
       HealthCheckRequest request =
@@ -36,8 +52,7 @@ public class AiServerClient {
       log.info("[AI Client] 헬스체크: {}", response.getStatus());
       return response;
     } catch (StatusRuntimeException e) {
-      log.error("[AI Client] 헬스체크 실패: {}", e.getMessage());
-      throw new AiServerException(AiServerErrorCode.AI503_01);
+      throw mapToAiServerException(e);
     }
   }
 
@@ -51,8 +66,7 @@ public class AiServerClient {
               .build();
       return stub.getServiceReadiness(request);
     } catch (StatusRuntimeException e) {
-      log.error("[AI Client] 서비스 준비 상태 확인 실패: {}", e.getMessage());
-      throw new AiServerException(AiServerErrorCode.AI503_01);
+      throw mapToAiServerException(e);
     }
   }
 
@@ -61,8 +75,7 @@ public class AiServerClient {
       stub.publishPortfolioPatch(envelope);
       log.info("[AI Client] PortfolioPatch 전송 완료: {}", envelope.getPortfolioPatchId());
     } catch (StatusRuntimeException e) {
-      log.error("[AI Client] PortfolioPatch 전송 실패: {}", e.getMessage());
-      throw new AiServerException(AiServerErrorCode.AI503_01);
+      throw mapToAiServerException(e);
     }
   }
 
@@ -71,8 +84,7 @@ public class AiServerClient {
       stub.publishFinalDecision(envelope);
       log.info("[AI Client] FinalDecision 전송 완료: {}", envelope.getDecisionId());
     } catch (StatusRuntimeException e) {
-      log.error("[AI Client] FinalDecision 전송 실패: {}", e.getMessage());
-      throw new AiServerException(AiServerErrorCode.AI503_01);
+      throw mapToAiServerException(e);
     }
   }
 
@@ -81,8 +93,7 @@ public class AiServerClient {
       stub.publishExecutionFeedback(envelope);
       log.info("[AI Client] ExecutionFeedback 전송 완료: {}", envelope.getOrderPlanId());
     } catch (StatusRuntimeException e) {
-      log.error("[AI Client] ExecutionFeedback 전송 실패: {}", e.getMessage());
-      throw new AiServerException(AiServerErrorCode.AI503_01);
+      throw mapToAiServerException(e);
     }
   }
 
@@ -91,8 +102,7 @@ public class AiServerClient {
       stub.publishInternalMessage(envelope);
       log.info("[AI Client] InternalMessage 전송 완료: {}", envelope.getMessageId());
     } catch (StatusRuntimeException e) {
-      log.error("[AI Client] InternalMessage 전송 실패: {}", e.getMessage());
-      throw new AiServerException(AiServerErrorCode.AI503_01);
+      throw mapToAiServerException(e);
     }
   }
 
@@ -101,8 +111,7 @@ public class AiServerClient {
       stub.publishAgentReport(envelope);
       log.info("[AI Client] AgentReport 전송 완료: {}", envelope.getReportId());
     } catch (StatusRuntimeException e) {
-      log.error("[AI Client] AgentReport 전송 실패: {}", e.getMessage());
-      throw new AiServerException(AiServerErrorCode.AI503_01);
+      throw mapToAiServerException(e);
     }
   }
 }

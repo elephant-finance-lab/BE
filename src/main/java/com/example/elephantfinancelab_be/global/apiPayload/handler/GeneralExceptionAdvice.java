@@ -3,6 +3,7 @@ package com.example.elephantfinancelab_be.global.apiPayload.handler;
 import com.example.elephantfinancelab_be.global.apiPayload.ApiResponse;
 import com.example.elephantfinancelab_be.global.apiPayload.code.BaseErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.code.GeneralErrorCode;
+import com.example.elephantfinancelab_be.global.apiPayload.exception.AiServerException;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.GeneralException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -30,6 +31,14 @@ public class GeneralExceptionAdvice {
         ex.getCode().getMessage(),
         ex.getMessage());
     log.debug("GeneralException detail", ex);
+    return ResponseEntity.status(ex.getCode().getStatus())
+        .body(ApiResponse.onFailure(ex.getCode(), null));
+  }
+
+  @ExceptionHandler(AiServerException.class)
+  public ResponseEntity<ApiResponse<Void>> handleAiServerException(AiServerException ex) {
+    log.warn("code={}, message={}", ex.getCode().getCode(), ex.getCode().getMessage());
+    log.debug("AiServerException detail", ex);
     return ResponseEntity.status(ex.getCode().getStatus())
         .body(ApiResponse.onFailure(ex.getCode(), null));
   }
