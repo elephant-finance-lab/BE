@@ -15,16 +15,28 @@ import com.example.elephantfinancelab_be.global.apiPayload.exception.AiServerExc
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
+import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class AiServerClient {
 
   private final AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stub;
+  private final int timeout;
+
+  public AiServerClient(
+      AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stub,
+      @Value("${ai.server.timeout}") int timeout) {
+    this.stub = stub;
+    this.timeout = timeout;
+  }
+
+  private AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stubWithDeadline() {
+    return stub.withDeadlineAfter(timeout, TimeUnit.SECONDS);
+  }
 
   private AiServerException mapToAiServerException(StatusRuntimeException e) {
     log.error(
@@ -37,6 +49,10 @@ public class AiServerClient {
       case PERMISSION_DENIED -> new AiServerException(AiServerErrorCode.AI403_01);
       case NOT_FOUND -> new AiServerException(AiServerErrorCode.AI404_01);
       case INTERNAL -> new AiServerException(AiServerErrorCode.AI500_01);
+      case UNAVAILABLE -> new AiServerException(AiServerErrorCode.AI503_01);
+      case RESOURCE_EXHAUSTED -> new AiServerException(AiServerErrorCode.AI429_01);
+      case UNIMPLEMENTED -> new AiServerException(AiServerErrorCode.AI501_01);
+      case CANCELLED -> new AiServerException(AiServerErrorCode.AI400_02);
       default -> new AiServerException(AiServerErrorCode.AI503_01);
     };
   }
@@ -48,7 +64,7 @@ public class AiServerClient {
               .setRequestId(UUID.randomUUID().toString())
               .setBundleId(bundleId != null ? bundleId : "")
               .build();
-      HealthCheckResponse response = stub.healthCheck(request);
+      HealthCheckResponse response = stubWithDeadline().healthCheck(request);
       log.info("[AI Client] 헬스체크: {}", response.getStatus());
       return response;
     } catch (StatusRuntimeException e) {
@@ -64,7 +80,7 @@ public class AiServerClient {
               .setBundleId(bundleId != null ? bundleId : "")
               .setIncludeDetails(true)
               .build();
-      return stub.getServiceReadiness(request);
+      return stubWithDeadline().getServiceReadiness(request);
     } catch (StatusRuntimeException e) {
       throw mapToAiServerException(e);
     }
@@ -72,7 +88,7 @@ public class AiServerClient {
 
   public void publishPortfolioPatch(PortfolioPatchEnvelope envelope) {
     try {
-      stub.publishPortfolioPatch(envelope);
+      stubWithDeadline().publishPortfolioPatch(envelope);
       log.info("[AI Client] PortfolioPatch 전송 완료: {}", envelope.getPortfolioPatchId());
     } catch (StatusRuntimeException e) {
       throw mapToAiServerException(e);
@@ -81,7 +97,7 @@ public class AiServerClient {
 
   public void publishFinalDecision(FinalDecisionEnvelope envelope) {
     try {
-      stub.publishFinalDecision(envelope);
+      stubWithDeadline().publishFinalDecision(envelope);
       log.info("[AI Client] FinalDecision 전송 완료: {}", envelope.getDecisionId());
     } catch (StatusRuntimeException e) {
       throw mapToAiServerException(e);
@@ -90,7 +106,7 @@ public class AiServerClient {
 
   public void publishExecutionFeedback(ExecutionFeedbackEnvelope envelope) {
     try {
-      stub.publishExecutionFeedback(envelope);
+      stubWithDeadline().publishExecutionFeedback(envelope);
       log.info("[AI Client] ExecutionFeedback 전송 완료: {}", envelope.getOrderPlanId());
     } catch (StatusRuntimeException e) {
       throw mapToAiServerException(e);
@@ -99,7 +115,7 @@ public class AiServerClient {
 
   public void publishInternalMessage(InternalMessageEnvelope envelope) {
     try {
-      stub.publishInternalMessage(envelope);
+      stubWithDeadline().publishInternalMessage(envelope);
       log.info("[AI Client] InternalMessage 전송 완료: {}", envelope.getMessageId());
     } catch (StatusRuntimeException e) {
       throw mapToAiServerException(e);
@@ -108,7 +124,7 @@ public class AiServerClient {
 
   public void publishAgentReport(AgentReportEnvelope envelope) {
     try {
-      stub.publishAgentReport(envelope);
+      stubWithDeadline().publishAgentReport(envelope);
       log.info("[AI Client] AgentReport 전송 완료: {}", envelope.getReportId());
     } catch (StatusRuntimeException e) {
       throw mapToAiServerException(e);
