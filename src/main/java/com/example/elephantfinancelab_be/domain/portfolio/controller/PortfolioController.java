@@ -73,4 +73,14 @@ public class PortfolioController {
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
         .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }
+
+  @Operation(summary = "보유 종목 AI 상세 정보 조회", description = "보유 종목 상세 화면에서 AI가 생성한 부가 정보를 조회합니다.")
+  @GetMapping("/holdings/{ticker}/detail")
+  public ResponseEntity<ApiResponse<PortfolioResDTO.HoldingAiDetail>> getHoldingDetail(
+      @AuthenticationPrincipal String email, @PathVariable String ticker) {
+    PortfolioResDTO.HoldingAiDetail result =
+        portfolioQueryService.findHoldingDetail(resolveUserId(email), ticker);
+    return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
+        .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+  }
 }

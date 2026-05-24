@@ -2,8 +2,12 @@ package com.example.elephantfinancelab_be.domain.portfolio.service.query;
 
 import com.example.elephantfinancelab_be.domain.portfolio.converter.PortfolioConverter;
 import com.example.elephantfinancelab_be.domain.portfolio.dto.res.PortfolioResDTO;
+import com.example.elephantfinancelab_be.domain.portfolio.entity.HoldingAiDetail;
 import com.example.elephantfinancelab_be.domain.portfolio.entity.Position;
 import com.example.elephantfinancelab_be.domain.portfolio.entity.TradeType;
+import com.example.elephantfinancelab_be.domain.portfolio.exception.PortfolioException;
+import com.example.elephantfinancelab_be.domain.portfolio.exception.code.PortfolioErrorCode;
+import com.example.elephantfinancelab_be.domain.portfolio.repository.HoldingAiDetailRepository;
 import com.example.elephantfinancelab_be.domain.portfolio.repository.PositionRepository;
 import com.example.elephantfinancelab_be.domain.portfolio.repository.TradeRepository;
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockResDTO;
@@ -25,6 +29,7 @@ public class PortfolioQueryServiceImpl implements PortfolioQueryService {
   private final PositionRepository positionRepository;
   private final TradeRepository tradeRepository;
   private final StockSummaryRedisService stockSummaryRedisService;
+  private final HoldingAiDetailRepository holdingAiDetailRepository;
 
   @Override
   public PortfolioResDTO.Summary findSummary(Long userId) {
@@ -67,6 +72,19 @@ public class PortfolioQueryServiceImpl implements PortfolioQueryService {
             ? tradeRepository.findAllByUserIdAndType(userId, type, pageable)
             : tradeRepository.findAllByUserId(userId, pageable);
     return PortfolioConverter.toTradePage(tradePage);
+  }
+
+  @Override
+  public PortfolioResDTO.HoldingAiDetail findHoldingDetail(Long userId, String tickerCode) {
+    String normalizedTicker = tickerCode.toUpperCase();
+    positionRepository
+        .findByUserIdAndTickerCode(userId, normalizedTicker)
+        .orElseThrow(() -> new PortfolioException(PortfolioErrorCode.HOLDING404_01));
+    HoldingAiDetail aiDetail =
+        holdingAiDetailRepository
+            .findTopByTickerCodeOrderByGeneratedAtDesc(normalizedTicker)
+            .orElseThrow(() -> new PortfolioException(PortfolioErrorCode.AI_DETAIL404_01));
+    return PortfolioConverter.toHoldingAiDetail(aiDetail);
   }
 
   private List<PortfolioResDTO.PositionDetail> toDetails(List<Position> positions) {

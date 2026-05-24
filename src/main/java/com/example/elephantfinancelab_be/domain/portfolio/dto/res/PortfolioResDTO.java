@@ -83,4 +83,16 @@ public class PortfolioResDTO {
     private Long totalAmount;
     private LocalDateTime tradedAt;
   }
+
+  @Getter
+  @Builder
+  @AllArgsConstructor
+  public static class HoldingAiDetail {
+    private String tickerCode;
+    private String companyName;
+    private Double aiHitRate;
+    private String tradeReason;
+    private String futureStrategy;
+    private LocalDateTime generatedAt;
+  }
 }

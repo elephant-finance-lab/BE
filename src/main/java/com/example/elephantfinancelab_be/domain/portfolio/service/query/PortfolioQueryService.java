@@ -11,4 +11,6 @@ public interface PortfolioQueryService {
   PortfolioResDTO.PositionPage findPositions(Long userId, Pageable pageable);
 
   PortfolioResDTO.TradePage findTrades(Long userId, TradeType type, Pageable pageable);
+
+  PortfolioResDTO.HoldingAiDetail findHoldingDetail(Long userId, String tickerCode);
 }
