@@ -171,16 +171,16 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     if (!tickerByRecommendationId.keySet().containsAll(recommendationIds)) {
       throw new AutoTradingException(AutoTradingErrorCode.INVALID_RECOMMENDATIONS);
     }
-    List<String> tickers =
-        recommendationIds.stream()
-            .map(tickerByRecommendationId::get)
-            .filter(ticker -> ticker != null && !ticker.isBlank())
-            .distinct()
-            .toList();
-    if (tickers.isEmpty()) {
+    if (recommendationIds.stream()
+        .map(tickerByRecommendationId::get)
+        .anyMatch(ticker -> ticker == null || ticker.isBlank())) {
       throw new AutoTradingException(AutoTradingErrorCode.SELECTED_TICKERS_EMPTY);
     }
-    return tickers;
+    return recommendationIds.stream()
+        .map(tickerByRecommendationId::get)
+        .map(String::trim)
+        .distinct()
+        .toList();
   }
 
   private static String requireIdempotencyKey(String idempotencyKey) {

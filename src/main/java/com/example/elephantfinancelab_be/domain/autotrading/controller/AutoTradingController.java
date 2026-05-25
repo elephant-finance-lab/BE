@@ -38,7 +38,7 @@ public class AutoTradingController {
   @PostMapping
   public ResponseEntity<ApiResponse<AutoTradingResDTO.Session>> startSession(
       @AuthenticationPrincipal String email,
-      @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
+      @RequestHeader(name = "Idempotency-Key") String idempotencyKey,
       @Valid @RequestBody AutoTradingReqDTO.StartSession request) {
     AutoTradingResDTO.Session result =
         autoTradingCommandService.startSession(resolveUserId(email), idempotencyKey, request);

@@ -48,7 +48,10 @@ public final class AutoTradingConverter {
     if (value == null || value.isBlank()) {
       return List.of();
     }
-    return Arrays.stream(value.split(",")).filter(item -> !item.isBlank()).toList();
+    return Arrays.stream(value.split(","))
+        .map(String::trim)
+        .filter(item -> !item.isBlank())
+        .toList();
   }
 
   private static List<Long> toLongList(String value) {

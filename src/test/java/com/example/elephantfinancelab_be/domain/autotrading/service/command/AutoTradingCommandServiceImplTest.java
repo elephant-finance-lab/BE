@@ -15,6 +15,7 @@ import com.example.elephantfinancelab_be.domain.autotrading.dto.req.AutoTradingR
 import com.example.elephantfinancelab_be.domain.autotrading.dto.res.AutoTradingResDTO;
 import com.example.elephantfinancelab_be.domain.autotrading.entity.AutoTradingSession;
 import com.example.elephantfinancelab_be.domain.autotrading.entity.AutoTradingSessionStatus;
+import com.example.elephantfinancelab_be.domain.autotrading.exception.AutoTradingException;
 import com.example.elephantfinancelab_be.domain.autotrading.repository.AutoTradingSessionRepository;
 import com.example.elephantfinancelab_be.domain.recommendation.entity.Recommendation;
 import com.example.elephantfinancelab_be.domain.recommendation.entity.UserSelectedRecommendation;
@@ -114,6 +115,20 @@ class AutoTradingCommandServiceImplTest {
     verify(sessionRepository, times(2)).saveAndFlush(sessionCaptor.capture());
     assertThat(sessionCaptor.getAllValues().getLast().getStatus())
         .isEqualTo(AutoTradingSessionStatus.FAILED);
+  }
+
+  @Test
+  void rejectsSessionWhenAnySelectedRecommendationHasNoTicker() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
+        .thenReturn(Optional.empty());
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+        .thenReturn(List.of(selectedRecommendation(1L, " ")));
+
+    assertThatThrownBy(() -> service.startSession(1L, "idempotency-1", request()))
+        .isInstanceOf(AutoTradingException.class);
+
+    verify(aiServerClient, never())
+        .startPaperAutoTrading(anyString(), anyString(), any(), any(), any(), anyString());
   }
 
   private static AutoTradingReqDTO.StartSession request() {
