@@ -47,4 +47,31 @@ class MarketIndexRealtimeParserTest {
     assertThat(result.get(0).market()).isEqualTo(MarketIndexMarket.KOSPI);
     assertThat(result.get(1).market()).isEqualTo(MarketIndexMarket.KOSDAQ);
   }
+
+  @Test
+  void dropMessageWhenDataCountIsInvalid() {
+    String message = "0|H0UPCNT0|abc|0001^143000^2735.24^2^12.31^0^0^0^0^0.45";
+
+    var result = parser.parseAll(message);
+
+    assertThat(result).isEmpty();
+  }
+
+  @Test
+  void skipMessageWhenCurrentValueIsInvalid() {
+    String message = "0|H0UPCNT0|001|0001^143000^NaN^2^12.31^0^0^0^0^0.45";
+
+    var result = parser.parseAll(message);
+
+    assertThat(result).isEmpty();
+  }
+
+  @Test
+  void skipMessageWhenRequiredDecimalIsBlank() {
+    String message = "0|H0UPCNT0|001|1001^143000^862.15^5^3.18^0^0^0^0^";
+
+    var result = parser.parseAll(message);
+
+    assertThat(result).isEmpty();
+  }
 }

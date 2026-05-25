@@ -23,6 +23,7 @@ public class MarketIndexRealtimeParser {
 
   static final String DOMESTIC_INDEX_REALTIME_TR_ID = "H0UPCNT0";
 
+  private static final String PARSE_FAILED_LOG = "market index parse failed, keep previous value";
   private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
   private static final DateTimeFormatter KIS_TIME_FORMATTER = DateTimeFormatter.ofPattern("HHmmss");
   private static final Duration FUTURE_TIMESTAMP_TOLERANCE = Duration.ofHours(1);
@@ -39,18 +40,29 @@ public class MarketIndexRealtimeParser {
   }
 
   public List<ParsedMarketIndex> parseAll(String message) {
-    if (message == null || message.isBlank() || message.startsWith("{")) {
+    if (message == null || message.isBlank()) {
+      log.warn("{}, reason=empty-message", PARSE_FAILED_LOG);
+      return List.of();
+    }
+
+    if (message.startsWith("{")) {
       return List.of();
     }
 
     String[] parts = message.split("\\|", 4);
-    if (parts.length < 4 || !DOMESTIC_INDEX_REALTIME_TR_ID.equals(parts[1])) {
+    if (parts.length < 4) {
+      log.warn("{}, reason=malformed-frame", PARSE_FAILED_LOG);
+      return List.of();
+    }
+
+    if (!DOMESTIC_INDEX_REALTIME_TR_ID.equals(parts[1])) {
       return List.of();
     }
 
     if ("1".equals(parts[0])) {
       log.warn(
-          "code={}, message={}, reason=encrypted",
+          "{}, code={}, message={}, reason=encrypted",
+          PARSE_FAILED_LOG,
           ChartErrorCode.KIS_MARKET_INDEX_REALTIME_MESSAGE_INVALID.getCode(),
           ChartErrorCode.KIS_MARKET_INDEX_REALTIME_MESSAGE_INVALID.getMessage());
       return List.of();
@@ -59,10 +71,12 @@ public class MarketIndexRealtimeParser {
     String[] fields = parts[3].split("\\^", -1);
     if (fields.length <= CHANGE_RATE_FIELD) {
       log.warn(
-          "code={}, message={}, count={}",
+          "{}, code={}, message={}, count={}, expectedAtLeast={}",
+          PARSE_FAILED_LOG,
           ChartErrorCode.KIS_MARKET_INDEX_REALTIME_MESSAGE_INVALID.getCode(),
           ChartErrorCode.KIS_MARKET_INDEX_REALTIME_MESSAGE_INVALID.getMessage(),
-          fields.length);
+          fields.length,
+          CHANGE_RATE_FIELD + 1);
       return List.of();
     }
 
@@ -72,54 +86,104 @@ public class MarketIndexRealtimeParser {
       int offset = index * RESPONSE_FIELD_COUNT;
       if (fields.length <= offset + CHANGE_RATE_FIELD) {
         log.warn(
-            "code={}, message={}, item={}, count={}",
+            "{}, code={}, message={}, item={}, count={}, expectedAtLeast={}",
+            PARSE_FAILED_LOG,
             ChartErrorCode.KIS_MARKET_INDEX_REALTIME_MESSAGE_INVALID.getCode(),
             ChartErrorCode.KIS_MARKET_INDEX_REALTIME_MESSAGE_INVALID.getMessage(),
             index,
-            fields.length);
+            fields.length,
+            offset + CHANGE_RATE_FIELD + 1);
         break;
       }
 
-      MarketIndexMarket.fromKisIndexCode(fields[offset + INDEX_CODE_FIELD])
-          .map(market -> new ParsedMarketIndex(market, toMarketIndex(market, fields, offset)))
+      String kisIndexCode = fields[offset + INDEX_CODE_FIELD];
+      Optional<MarketIndexMarket> market = MarketIndexMarket.fromKisIndexCode(kisIndexCode);
+      if (market.isEmpty()) {
+        log.warn("{}, reason=unsupported-market, kisIndexCode={}", PARSE_FAILED_LOG, kisIndexCode);
+        continue;
+      }
+
+      toMarketIndex(market.get(), fields, offset)
+          .map(indexDto -> new ParsedMarketIndex(market.get(), indexDto))
           .ifPresent(indexes::add);
     }
 
     return indexes;
   }
 
-  private MarketIndexResDTO.MarketIndex toMarketIndex(
+  private Optional<MarketIndexResDTO.MarketIndex> toMarketIndex(
       MarketIndexMarket market, String[] fields, int offset) {
     String changeSign = fields[offset + CHANGE_SIGN_FIELD];
-    return new MarketIndexResDTO.MarketIndex(
-        market.name(),
-        parseDecimal(fields[offset + CURRENT_VALUE_FIELD]),
-        applySign(parseDecimal(fields[offset + CHANGE_FIELD]), changeSign),
-        applySign(parseDecimal(fields[offset + CHANGE_RATE_FIELD]), changeSign),
-        parseTimestamp(fields[offset + TRADE_TIME_FIELD]));
+    if (!hasText(changeSign)) {
+      log.warn("{}, market={}, reason=blank-change-sign", PARSE_FAILED_LOG, market.name());
+      return Optional.empty();
+    }
+
+    Optional<BigDecimal> value =
+        parseDecimal(market, "value", fields[offset + CURRENT_VALUE_FIELD]);
+    Optional<BigDecimal> change = parseDecimal(market, "change", fields[offset + CHANGE_FIELD]);
+    Optional<BigDecimal> changeRate =
+        parseDecimal(market, "changeRate", fields[offset + CHANGE_RATE_FIELD]);
+
+    if (value.isEmpty() || change.isEmpty() || changeRate.isEmpty()) {
+      return Optional.empty();
+    }
+
+    if (value.get().compareTo(BigDecimal.ZERO) <= 0) {
+      log.warn(
+          "{}, market={}, reason=non-positive-value, value={}",
+          PARSE_FAILED_LOG,
+          market.name(),
+          value.get());
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        new MarketIndexResDTO.MarketIndex(
+            market.name(),
+            value.get(),
+            applySign(change.get(), changeSign),
+            applySign(changeRate.get(), changeSign),
+            parseTimestamp(fields[offset + TRADE_TIME_FIELD])));
   }
 
   private int parseDataCount(String dataCount) {
     try {
-      return Integer.parseInt(dataCount);
+      int count = Integer.parseInt(dataCount);
+      if (count <= 0) {
+        log.warn("{}, reason=invalid-data-count, dataCount={}", PARSE_FAILED_LOG, dataCount);
+        return 0;
+      }
+      return count;
     } catch (NumberFormatException e) {
-      return 1;
+      log.warn("{}, reason=invalid-data-count, dataCount={}", PARSE_FAILED_LOG, dataCount);
+      return 0;
     }
   }
 
-  private BigDecimal parseDecimal(String value) {
-    if (value == null || value.isBlank()) {
-      return BigDecimal.ZERO;
+  private Optional<BigDecimal> parseDecimal(
+      MarketIndexMarket market, String fieldName, String value) {
+    if (!hasText(value)) {
+      log.warn(
+          "{}, market={}, reason=blank-decimal, field={}",
+          PARSE_FAILED_LOG,
+          market.name(),
+          fieldName);
+      return Optional.empty();
     }
+
     try {
-      return new BigDecimal(value.trim());
+      return Optional.of(new BigDecimal(value.trim().replace(",", "")));
     } catch (NumberFormatException e) {
       log.warn(
-          "code={}, message={}, value={}",
+          "{}, code={}, message={}, market={}, field={}, value={}",
+          PARSE_FAILED_LOG,
           ChartErrorCode.KIS_MARKET_INDEX_REALTIME_MESSAGE_INVALID.getCode(),
           ChartErrorCode.KIS_MARKET_INDEX_REALTIME_MESSAGE_INVALID.getMessage(),
+          market.name(),
+          fieldName,
           value);
-      return BigDecimal.ZERO;
+      return Optional.empty();
     }
   }
 
@@ -139,7 +203,9 @@ public class MarketIndexRealtimeParser {
   private LocalDateTime parseTimestamp(String kisTime) {
     LocalDate today = LocalDate.now(KOREA_ZONE);
     if (kisTime == null || kisTime.isBlank()) {
-      return LocalDateTime.now(KOREA_ZONE).withNano(0);
+      LocalDateTime receivedAt = LocalDateTime.now(KOREA_ZONE).withNano(0);
+      log.warn("market index timestamp missing, use received time: timestamp={}", receivedAt);
+      return receivedAt;
     }
 
     try {
@@ -151,8 +217,17 @@ public class MarketIndexRealtimeParser {
       }
       return timestamp;
     } catch (DateTimeParseException e) {
-      return LocalDateTime.now(KOREA_ZONE).withNano(0);
+      LocalDateTime receivedAt = LocalDateTime.now(KOREA_ZONE).withNano(0);
+      log.warn(
+          "market index timestamp parse failed, use received time: value={}, timestamp={}",
+          kisTime,
+          receivedAt);
+      return receivedAt;
     }
+  }
+
+  private boolean hasText(String value) {
+    return value != null && !value.isBlank();
   }
 
   public record ParsedMarketIndex(MarketIndexMarket market, MarketIndexResDTO.MarketIndex index) {}

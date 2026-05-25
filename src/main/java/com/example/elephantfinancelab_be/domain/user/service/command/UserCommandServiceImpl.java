@@ -53,7 +53,7 @@ public class UserCommandServiceImpl implements UserCommandService {
       throw new UserException(UserErrorCode.DUPLICATE_PHONE);
     }
     user.updateInfo(request.getName(), normalizedPhone, request.getGender());
-    // 계좌 등록은 기본 정보 저장 이후 /api/users/accounts에서 별도로 처리한다.
+    //  계좌 등록은 기본 정보 저장 이후 /api/users/accounts에서 별도로 처리한다.
 
     return UserResDTO.UserId.builder().userId(userId).build();
   }

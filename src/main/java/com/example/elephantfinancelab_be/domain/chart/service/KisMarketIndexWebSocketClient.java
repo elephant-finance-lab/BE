@@ -180,21 +180,38 @@ public class KisMarketIndexWebSocketClient {
   }
 
   private void handleMessage(String message) {
+    if (!hasText(message)) {
+      log.warn("KIS market index WebSocket message received empty, skip redis update");
+      return;
+    }
+
     if (message.startsWith("{")) {
       logSubscriptionResponse(message);
       return;
     }
 
-    marketIndexRealtimeParser
-        .parseAll(message)
-        .forEach(
-            parsed -> {
-              marketIndexRedisService.save(parsed.market(), parsed.index());
-              log.debug(
-                  "한국투자증권 시장 지수 메시지 수신. market={}, value={}",
-                  parsed.market().name(),
-                  parsed.index().value());
-            });
+    log.info("KIS market index WebSocket message received: length={}", message.length());
+
+    var parsedIndexes = marketIndexRealtimeParser.parseAll(message);
+    if (parsedIndexes.isEmpty()) {
+      log.warn("market index parse failed, keep previous value");
+      return;
+    }
+
+    parsedIndexes.forEach(
+        parsed -> {
+          log.info(
+              "market index parse succeeded: market={}, value={}, timestamp={}",
+              parsed.market().name(),
+              parsed.index().value(),
+              parsed.index().timestamp());
+          boolean saved = marketIndexRedisService.save(parsed.market(), parsed.index());
+          if (!saved) {
+            log.warn(
+                "market index redis save skipped after parse: key={}",
+                parsed.market().getRedisKey());
+          }
+        });
   }
 
   private void logSubscriptionResponse(String message) {
