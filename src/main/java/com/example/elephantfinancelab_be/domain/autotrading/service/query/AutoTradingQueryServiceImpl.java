@@ -28,7 +28,6 @@ public class AutoTradingQueryServiceImpl implements AutoTradingQueryService {
   }
 
   @Override
-  @Transactional
   public AutoTradingResDTO.AiStatus findAiStatus(Long userId, String sessionId) {
     AutoTradingSession session = getSession(userId, sessionId);
     PaperAutoTradingStatusResponse response =
@@ -48,6 +47,7 @@ public class AutoTradingQueryServiceImpl implements AutoTradingQueryService {
       } else {
         session.updateAiStatusMessage(message);
       }
+      autoTradingSessionRepository.saveAndFlush(session);
     }
     return AutoTradingConverter.toAiStatus(session, response, matchesSession);
   }

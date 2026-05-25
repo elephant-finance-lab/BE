@@ -20,6 +20,7 @@ public final class RecommendationConverter {
   public static RecommendationResDTO.RecommendationInfoDTO toRecommendationInfoDTO(
       Recommendation entity) {
     return RecommendationResDTO.RecommendationInfoDTO.builder()
+        .recommendationId(entity.getId())
         .rank(entity.getRanking())
         .tickerCode(entity.getTickerCode())
         .companyName(entity.getCompanyName())

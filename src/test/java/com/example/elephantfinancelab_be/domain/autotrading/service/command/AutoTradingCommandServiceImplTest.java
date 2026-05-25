@@ -15,6 +15,8 @@ import com.example.elephantfinancelab_be.domain.autotrading.dto.req.AutoTradingR
 import com.example.elephantfinancelab_be.domain.autotrading.dto.res.AutoTradingResDTO;
 import com.example.elephantfinancelab_be.domain.autotrading.entity.AutoTradingSession;
 import com.example.elephantfinancelab_be.domain.autotrading.entity.AutoTradingSessionStatus;
+import com.example.elephantfinancelab_be.domain.autotrading.exception.AutoTradingException;
+import com.example.elephantfinancelab_be.domain.autotrading.exception.code.AutoTradingErrorCode;
 import com.example.elephantfinancelab_be.domain.autotrading.repository.AutoTradingSessionRepository;
 import com.example.elephantfinancelab_be.domain.recommendation.entity.Recommendation;
 import com.example.elephantfinancelab_be.domain.recommendation.entity.UserSelectedRecommendation;
@@ -116,9 +118,31 @@ class AutoTradingCommandServiceImplTest {
         .isEqualTo(AutoTradingSessionStatus.FAILED);
   }
 
+  @Test
+  void rejectsStartWhenAnySelectedRecommendationHasBlankTicker() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
+        .thenReturn(Optional.empty());
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L, 2L)))
+        .thenReturn(List.of(selectedRecommendation(1L, "005930"), selectedRecommendation(2L, " ")));
+
+    assertThatThrownBy(() -> service.startSession(1L, "idempotency-1", request(List.of(1L, 2L))))
+        .isInstanceOf(AutoTradingException.class)
+        .satisfies(
+            exception ->
+                assertThat(((AutoTradingException) exception).getCode())
+                    .isEqualTo(AutoTradingErrorCode.SELECTED_TICKERS_EMPTY));
+
+    verify(aiServerClient, never())
+        .startPaperAutoTrading(anyString(), anyString(), any(), any(), any(), anyString());
+  }
+
   private static AutoTradingReqDTO.StartSession request() {
+    return request(List.of(1L));
+  }
+
+  private static AutoTradingReqDTO.StartSession request(List<Long> recommendationIds) {
     AutoTradingReqDTO.StartSession request = new AutoTradingReqDTO.StartSession();
-    ReflectionTestUtils.setField(request, "recommendationIds", List.of(1L));
+    ReflectionTestUtils.setField(request, "recommendationIds", recommendationIds);
     ReflectionTestUtils.setField(request, "purchaseOptionId", 2);
     ReflectionTestUtils.setField(request, "cycles", 3);
     ReflectionTestUtils.setField(request, "intervalSec", 10);
