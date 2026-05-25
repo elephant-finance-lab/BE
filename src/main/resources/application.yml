@@ -1,6 +1,13 @@
 app:
   seed:
     enabled: true
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  oauth2:
+    success-redirect-uri: ${OAUTH2_SUCCESS_REDIRECT_URI:http://localhost:5173/auth/callback}
+    failure-redirect-uri: ${OAUTH2_FAILURE_REDIRECT_URI:http://localhost:5173/login}
+  auth:
+    refresh-cookie-secure: ${REFRESH_COOKIE_SECURE:false}
 
 spring:
   application:
@@ -58,6 +65,7 @@ spring:
             client-name: Kakao
             scope:
               - profile_nickname
+              - account_email
         provider:
           naver:
             authorization-uri: https://nid.naver.com/oauth2.0/authorize
