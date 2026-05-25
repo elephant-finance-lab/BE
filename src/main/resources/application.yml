@@ -34,6 +34,13 @@ spring:
       host: localhost
       port: 6379
 
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
   security:
     oauth2:
       client:
@@ -111,3 +118,9 @@ ai:
   paper-auto:
     bundle-id: ${AI_PAPER_BUNDLE_ID:}
     confirm-phrase: ${AI_PAPER_CONFIRM_PHRASE:PAPER_AUTO_OK}
+
+auto-trading:
+  kafka:
+    enabled: ${AUTO_TRADING_KAFKA_ENABLED:true}
+    topic: ${AUTO_TRADING_KAFKA_TOPIC:${KAFKA_TOPIC:elephant-paper-trading-events}}
+    group-id: ${AUTO_TRADING_KAFKA_GROUP_ID:elephant-be-auto-trading}

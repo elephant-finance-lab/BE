@@ -94,6 +94,13 @@ public class AutoTradingSession extends BaseEntity {
     releaseActiveSlot();
   }
 
+  public void markFailed(String message) {
+    this.status = AutoTradingSessionStatus.FAILED;
+    this.aiStatusMessage = message;
+    this.failedAt = LocalDateTime.now();
+    releaseActiveSlot();
+  }
+
   public void markStopping(String message) {
     this.status = AutoTradingSessionStatus.STOPPING;
     this.aiStatusMessage = message;

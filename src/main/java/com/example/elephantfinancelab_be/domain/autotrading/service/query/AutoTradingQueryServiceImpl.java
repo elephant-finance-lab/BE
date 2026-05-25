@@ -9,7 +9,6 @@ import com.example.elephantfinancelab_be.domain.autotrading.exception.AutoTradin
 import com.example.elephantfinancelab_be.domain.autotrading.exception.code.AutoTradingErrorCode;
 import com.example.elephantfinancelab_be.domain.autotrading.repository.AutoTradingSessionRepository;
 import com.example.elephantfinancelab_be.global.config.AiServerClient;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,8 +29,12 @@ public class AutoTradingQueryServiceImpl implements AutoTradingQueryService {
   @Override
   public AutoTradingResDTO.AiStatus findAiStatus(Long userId, String sessionId) {
     AutoTradingSession session = getSession(userId, sessionId);
+    if (session.getAiRequestId() == null || session.getAiRequestId().isBlank()) {
+      throw new AutoTradingException(AutoTradingErrorCode.AI_REQUEST_ID_NOT_FOUND);
+    }
+
     PaperAutoTradingStatusResponse response =
-        aiServerClient.getPaperAutoTradingStatus(UUID.randomUUID().toString());
+        aiServerClient.getPaperAutoTradingStatus(session.getAiRequestId());
     boolean matchesSession =
         session.getAiSessionId() != null
             && !session.getAiSessionId().isBlank()
@@ -47,7 +50,7 @@ public class AutoTradingQueryServiceImpl implements AutoTradingQueryService {
       } else {
         session.updateAiStatusMessage(message);
       }
-      autoTradingSessionRepository.saveAndFlush(session);
+      session = autoTradingSessionRepository.saveAndFlush(session);
     }
     return AutoTradingConverter.toAiStatus(session, response, matchesSession);
   }
