@@ -22,6 +22,7 @@ public class RecommendationResDTO {
   @NoArgsConstructor
   @AllArgsConstructor
   public static class RecommendationInfoDTO {
+    private Long recommendationId;
     private Integer rank;
     private String tickerCode;
     private String companyName;

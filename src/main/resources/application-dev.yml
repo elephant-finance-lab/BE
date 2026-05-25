@@ -1,6 +1,6 @@
 app:
   seed:
-    enabled: false
+    enabled: ${APP_SEED_ENABLED:false}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   oauth2:
@@ -63,3 +63,12 @@ logging:
   level:
     org.springframework.security: DEBUG
     com.example: DEBUG
+
+ai:
+  server:
+    host: ${AI_SERVER_HOST:localhost}
+    port: ${AI_SERVER_PORT:50051}
+    timeout: ${AI_SERVER_TIMEOUT:5}
+  paper-auto:
+    bundle-id: ${AI_PAPER_BUNDLE_ID:}
+    confirm-phrase: ${AI_PAPER_CONFIRM_PHRASE:PAPER_AUTO_OK}

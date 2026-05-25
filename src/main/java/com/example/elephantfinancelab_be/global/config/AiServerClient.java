@@ -4,16 +4,23 @@ import com.elephant.ai.v1.AgentReportEnvelope;
 import com.elephant.ai.v1.AiBeBridgeServiceGrpc;
 import com.elephant.ai.v1.ExecutionFeedbackEnvelope;
 import com.elephant.ai.v1.FinalDecisionEnvelope;
+import com.elephant.ai.v1.GetPaperAutoTradingStatusRequest;
 import com.elephant.ai.v1.HealthCheckRequest;
 import com.elephant.ai.v1.HealthCheckResponse;
 import com.elephant.ai.v1.InternalMessageEnvelope;
+import com.elephant.ai.v1.PaperAutoTradingStatusResponse;
 import com.elephant.ai.v1.PortfolioPatchEnvelope;
 import com.elephant.ai.v1.ServiceReadinessRequest;
 import com.elephant.ai.v1.ServiceReadinessResponse;
+import com.elephant.ai.v1.StartPaperAutoTradingRequest;
+import com.elephant.ai.v1.StartPaperAutoTradingResponse;
+import com.elephant.ai.v1.StopPaperAutoTradingRequest;
+import com.elephant.ai.v1.StopPaperAutoTradingResponse;
 import com.example.elephantfinancelab_be.global.apiPayload.code.AiServerErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.AiServerException;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
@@ -53,6 +60,7 @@ public class AiServerClient {
       case RESOURCE_EXHAUSTED -> new AiServerException(AiServerErrorCode.AI429_01);
       case UNIMPLEMENTED -> new AiServerException(AiServerErrorCode.AI501_01);
       case CANCELLED -> new AiServerException(AiServerErrorCode.AI400_02);
+      case FAILED_PRECONDITION -> new AiServerException(AiServerErrorCode.AI400_01);
       default -> new AiServerException(AiServerErrorCode.AI503_01);
     };
   }
@@ -126,6 +134,55 @@ public class AiServerClient {
     try {
       stubWithDeadline().publishAgentReport(envelope);
       log.info("[AI Client] AgentReport 전송 완료: {}", envelope.getReportId());
+    } catch (StatusRuntimeException e) {
+      throw mapToAiServerException(e);
+    }
+  }
+
+  public StartPaperAutoTradingResponse startPaperAutoTrading(
+      String requestId,
+      String bundleId,
+      Integer cycles,
+      Integer intervalSec,
+      List<String> tickers,
+      String confirmPhrase) {
+    try {
+      StartPaperAutoTradingRequest.Builder builder =
+          StartPaperAutoTradingRequest.newBuilder()
+              .setRequestId(requestId)
+              .setBundleId(bundleId != null ? bundleId : "")
+              .addAllTickers(tickers)
+              .setConfirmPhrase(confirmPhrase != null ? confirmPhrase : "");
+      if (cycles != null) {
+        builder.setCycles(cycles);
+      }
+      if (intervalSec != null) {
+        builder.setIntervalSec(intervalSec);
+      }
+      return stubWithDeadline().startPaperAutoTrading(builder.build());
+    } catch (StatusRuntimeException e) {
+      throw mapToAiServerException(e);
+    }
+  }
+
+  public StopPaperAutoTradingResponse stopPaperAutoTrading(String requestId, String aiSessionId) {
+    try {
+      StopPaperAutoTradingRequest request =
+          StopPaperAutoTradingRequest.newBuilder()
+              .setRequestId(requestId)
+              .setSessionId(aiSessionId != null ? aiSessionId : "")
+              .build();
+      return stubWithDeadline().stopPaperAutoTrading(request);
+    } catch (StatusRuntimeException e) {
+      throw mapToAiServerException(e);
+    }
+  }
+
+  public PaperAutoTradingStatusResponse getPaperAutoTradingStatus(String requestId) {
+    try {
+      GetPaperAutoTradingStatusRequest request =
+          GetPaperAutoTradingStatusRequest.newBuilder().setRequestId(requestId).build();
+      return stubWithDeadline().getPaperAutoTradingStatus(request);
     } catch (StatusRuntimeException e) {
       throw mapToAiServerException(e);
     }
