@@ -53,6 +53,35 @@ class AutoTradingQueryServiceImplTest {
   }
 
   @Test
+  void persistsCompletedStatusWhenAiReportsMatchingStoppedSession() {
+    AutoTradingSession session =
+        AutoTradingSession.builder()
+            .sessionId("be-session-1")
+            .userId(1L)
+            .status(AutoTradingSessionStatus.RUNNING)
+            .aiSessionId("ai-session-1")
+            .aiRequestId("start-request-1")
+            .build();
+    when(sessionRepository.findBySessionIdAndUserId("be-session-1", 1L))
+        .thenReturn(Optional.of(session));
+    when(aiServerClient.getPaperAutoTradingStatus("start-request-1"))
+        .thenReturn(
+            PaperAutoTradingStatusResponse.newBuilder()
+                .setSessionId("ai-session-1")
+                .setStatus("IDLE")
+                .setRunning(false)
+                .build());
+    when(sessionRepository.saveAndFlush(session)).thenReturn(session);
+
+    AutoTradingResDTO.AiStatus result = service.findAiStatus(1L, "be-session-1");
+
+    assertThat(result.isMatchesSession()).isTrue();
+    assertThat(session.getStatus()).isEqualTo(AutoTradingSessionStatus.COMPLETED);
+    verify(aiServerClient).getPaperAutoTradingStatus("start-request-1");
+    verify(sessionRepository).saveAndFlush(session);
+  }
+
+  @Test
   void rejectsAiStatusQueryWhenStartRequestIdIsMissing() {
     AutoTradingSession session =
         AutoTradingSession.builder()

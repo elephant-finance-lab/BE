@@ -23,6 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 @Slf4j
 @Component
@@ -56,7 +57,8 @@ public class KisMarketIndexWebSocketClient {
       return;
     }
 
-    if (!hasText(kisProperties.getAppKey()) || !hasText(kisProperties.getAppSecret())) {
+    if (!StringUtils.hasText(kisProperties.getAppKey())
+        || !StringUtils.hasText(kisProperties.getAppSecret())) {
       log.warn(
           "code={}, message={}, reason=missing-kis-credentials",
           ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getCode(),
@@ -180,21 +182,38 @@ public class KisMarketIndexWebSocketClient {
   }
 
   private void handleMessage(String message) {
+    if (!StringUtils.hasText(message)) {
+      log.warn("KIS market index WebSocket message received empty, skip redis update");
+      return;
+    }
+
     if (message.startsWith("{")) {
       logSubscriptionResponse(message);
       return;
     }
 
-    marketIndexRealtimeParser
-        .parseAll(message)
-        .forEach(
-            parsed -> {
-              marketIndexRedisService.save(parsed.market(), parsed.index());
-              log.debug(
-                  "한국투자증권 시장 지수 메시지 수신. market={}, value={}",
-                  parsed.market().name(),
-                  parsed.index().value());
-            });
+    log.debug("KIS market index WebSocket message received: length={}", message.length());
+
+    var parsedIndexes = marketIndexRealtimeParser.parseAll(message);
+    if (parsedIndexes.isEmpty()) {
+      log.warn("market index parse failed, keep previous value");
+      return;
+    }
+
+    parsedIndexes.forEach(
+        parsed -> {
+          log.debug(
+              "market index parse succeeded: market={}, value={}, timestamp={}",
+              parsed.market().name(),
+              parsed.index().value(),
+              parsed.index().timestamp());
+          boolean saved = marketIndexRedisService.save(parsed.market(), parsed.index());
+          if (!saved) {
+            log.warn(
+                "market index redis save skipped after parse: key={}",
+                parsed.market().getRedisKey());
+          }
+        });
   }
 
   private void logSubscriptionResponse(String message) {
@@ -211,10 +230,6 @@ public class KisMarketIndexWebSocketClient {
     } catch (JsonProcessingException e) {
       log.debug("한국투자증권 시장 지수 웹소켓 비데이터 메시지를 수신했습니다.");
     }
-  }
-
-  private boolean hasText(String value) {
-    return value != null && !value.isBlank();
   }
 
   private class KisWebSocketListener implements WebSocket.Listener {

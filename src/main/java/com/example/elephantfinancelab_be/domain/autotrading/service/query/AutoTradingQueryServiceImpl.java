@@ -32,6 +32,7 @@ public class AutoTradingQueryServiceImpl implements AutoTradingQueryService {
     if (session.getAiRequestId() == null || session.getAiRequestId().isBlank()) {
       throw new AutoTradingException(AutoTradingErrorCode.AI_REQUEST_ID_NOT_FOUND);
     }
+
     PaperAutoTradingStatusResponse response =
         aiServerClient.getPaperAutoTradingStatus(session.getAiRequestId());
     boolean matchesSession =
