@@ -1,5 +1,7 @@
 package com.example.elephantfinancelab_be.domain.autotrading.entity;
 
+import java.util.Locale;
+
 public enum AutoTradingEventType {
   AUTO_TRADING_STARTED,
   DECISION_COMPLETED,
@@ -15,7 +17,7 @@ public enum AutoTradingEventType {
       return UNKNOWN;
     }
     try {
-      return valueOf(value.trim().toUpperCase());
+      return valueOf(value.trim().toUpperCase(Locale.ROOT));
     } catch (IllegalArgumentException exception) {
       return UNKNOWN;
     }

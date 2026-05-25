@@ -21,6 +21,7 @@ import com.example.elephantfinancelab_be.global.apiPayload.exception.AiServerExc
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
@@ -151,7 +152,7 @@ public class AiServerClient {
           StartPaperAutoTradingRequest.newBuilder()
               .setRequestId(requestId)
               .setBundleId(bundleId != null ? bundleId : "")
-              .addAllTickers(tickers)
+              .addAllTickers(safeTickers(tickers))
               .setConfirmPhrase(confirmPhrase != null ? confirmPhrase : "");
       if (cycles != null) {
         builder.setCycles(cycles);
@@ -186,5 +187,9 @@ public class AiServerClient {
     } catch (StatusRuntimeException e) {
       throw mapToAiServerException(e);
     }
+  }
+
+  private static List<String> safeTickers(List<String> tickers) {
+    return tickers == null ? List.of() : tickers.stream().filter(Objects::nonNull).toList();
   }
 }

@@ -93,7 +93,7 @@ public class AutoTradingKafkaEventParser {
 
   private JsonNode payload(ObjectNode root) {
     JsonNode nested = root.get("payload");
-    if (nested != null && nested.isObject()) {
+    if (nested != null && !nested.isNull()) {
       return nested;
     }
     ObjectNode flattened = root.deepCopy();

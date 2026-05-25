@@ -8,7 +8,7 @@ import com.example.elephantfinancelab_be.domain.notification.entity.Notification
 import com.example.elephantfinancelab_be.domain.notification.exception.NotificationException;
 import com.example.elephantfinancelab_be.domain.notification.exception.code.NotificationErrorCode;
 import com.example.elephantfinancelab_be.domain.notification.repository.NotificationRepository;
-import java.util.List;
+import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,8 +53,7 @@ public class NotificationCommandServiceImpl implements NotificationCommandServic
 
   @Override
   public NotificationResDTO.ReadAll markAllRead(Long userId) {
-    List<Notification> unread = notificationRepository.findAllByUserIdAndReadFalse(userId);
-    unread.forEach(Notification::markRead);
-    return NotificationResDTO.ReadAll.builder().updatedCount(unread.size()).build();
+    int updatedCount = notificationRepository.markAllReadByUserId(userId, LocalDateTime.now());
+    return NotificationResDTO.ReadAll.builder().updatedCount(updatedCount).build();
   }
 }

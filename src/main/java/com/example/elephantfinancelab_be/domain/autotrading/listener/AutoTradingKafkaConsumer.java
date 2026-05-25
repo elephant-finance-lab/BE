@@ -31,7 +31,35 @@ public class AutoTradingKafkaConsumer {
           eventProcessingService.process(record.key(), record.value());
       dispatch.ifPresent(item -> notificationPushService.push(item.userId(), item.notification()));
     } catch (DataIntegrityViolationException duplicate) {
+      if (!isDuplicateEventConstraint(duplicate)) {
+        throw duplicate;
+      }
       log.debug("동시에 재수신된 자동매매 Kafka 이벤트를 unique constraint로 건너뜁니다. key={}", record.key());
     }
+  }
+
+  private static boolean isDuplicateEventConstraint(DataIntegrityViolationException exception) {
+    Throwable current = exception;
+    while (current != null) {
+      if (current instanceof org.hibernate.exception.ConstraintViolationException violation) {
+        String constraintName = violation.getConstraintName();
+        if (isKnownDuplicateConstraint(constraintName)) {
+          return true;
+        }
+      }
+      current = current.getCause();
+    }
+    return isKnownDuplicateConstraint(exception.getMostSpecificCause().getMessage())
+        || isKnownDuplicateConstraint(exception.getMessage());
+  }
+
+  private static boolean isKnownDuplicateConstraint(String value) {
+    if (value == null) {
+      return false;
+    }
+    String normalized = value.toLowerCase(java.util.Locale.ROOT);
+    return normalized.contains("uk_auto_trading_event_external_id")
+        || normalized.contains("uk_auto_trading_event_synthetic_id")
+        || normalized.contains("uk_auto_trading_execution_event");
   }
 }

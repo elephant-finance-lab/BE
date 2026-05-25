@@ -81,7 +81,24 @@ class AutoTradingKafkaEventParserTest {
 
     assertThat(event.eventId()).isEqualTo("event-2");
     assertThat(event.requestId()).isEqualTo("start-request-2");
-    assertThat(event.payload().get("paper_only").booleanValue()).isTrue();
+    assertThat(event.payload().get("paper_only").asBoolean()).isTrue();
     assertThat(event.payloadJson()).doesNotContain("request_id");
+  }
+
+  @Test
+  void preservesNestedNonObjectPayload() {
+    AutoTradingKafkaEvent event =
+        parser.parse(
+            "ai-session-3",
+            """
+            {
+              "event_type": "DECISION_COMPLETED",
+              "session_id": "ai-session-3",
+              "payload": ["raw", "payload"]
+            }
+            """);
+
+    assertThat(event.payload().isArray()).isTrue();
+    assertThat(event.payloadJson()).isEqualTo("[\"raw\",\"payload\"]");
   }
 }

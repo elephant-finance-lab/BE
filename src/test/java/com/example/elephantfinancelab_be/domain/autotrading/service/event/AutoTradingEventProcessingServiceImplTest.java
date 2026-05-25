@@ -26,6 +26,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class AutoTradingEventProcessingServiceImplTest {
 
@@ -50,7 +51,12 @@ class AutoTradingEventProcessingServiceImplTest {
     when(eventRepository.saveAndFlush(any(AutoTradingEvent.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
     when(executionRepository.saveAndFlush(any(AutoTradingExecution.class)))
-        .thenAnswer(invocation -> invocation.getArgument(0));
+        .thenAnswer(
+            invocation -> {
+              AutoTradingExecution execution = invocation.getArgument(0);
+              ReflectionTestUtils.setField(execution, "id", 99L);
+              return execution;
+            });
     when(notificationCommandService.create(any(), any(), any(), any(), any(), any()))
         .thenReturn(NotificationResDTO.Item.builder().notificationId(1L).build());
   }
@@ -183,7 +189,7 @@ class AutoTradingEventProcessingServiceImplTest {
             "005930 1주 모의 매수 주문이 체결되었습니다.",
             com.example.elephantfinancelab_be.domain.notification.entity.NotificationReferenceType
                 .PAPER_ORDER_EXECUTION,
-            "null");
+            "99");
   }
 
   @Test

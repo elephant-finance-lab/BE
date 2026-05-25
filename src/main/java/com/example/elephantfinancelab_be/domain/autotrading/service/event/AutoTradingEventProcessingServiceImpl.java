@@ -90,7 +90,6 @@ public class AutoTradingEventProcessingServiceImpl implements AutoTradingEventPr
             .or(() -> findByAiRequestId(message.requestId()))
             .or(() -> findByBeSessionId(message.beSessionId()))
             .or(() -> findByBeSessionId(message.correlationId()))
-            .or(() -> findByIdempotencyKey(message.idempotencyKey()))
             .or(() -> findByAiSessionId(message.messageKey()))
             .or(() -> findByBeSessionId(message.messageKey()));
     if (session.isPresent()) {
@@ -122,12 +121,6 @@ public class AutoTradingEventProcessingServiceImpl implements AutoTradingEventPr
     return value == null
         ? Optional.empty()
         : sessionRepository.findFirstByAiRequestIdOrderByCreatedAtDesc(value);
-  }
-
-  private Optional<AutoTradingSession> findByIdempotencyKey(String value) {
-    return value == null
-        ? Optional.empty()
-        : sessionRepository.findFirstByIdempotencyKeyOrderByCreatedAtDesc(value);
   }
 
   private AutoTradingEvent toEvent(AutoTradingKafkaEvent message, String beSessionId) {
@@ -306,7 +299,7 @@ public class AutoTradingEventProcessingServiceImpl implements AutoTradingEventPr
   private static String decisionMessage(JsonNode payload) {
     JsonNode approved = value(payload, "approved");
     Long orderCount = payloadLong(payload, "order_count", "orderCount");
-    if ((approved != null && approved.isBoolean() && !approved.booleanValue())
+    if ((approved != null && approved.isBoolean() && !approved.asBoolean())
         || (orderCount != null && orderCount == 0)) {
       return "AI가 판단을 완료했습니다. 현재 조건에서는 주문을 실행하지 않았습니다.";
     }
@@ -349,7 +342,7 @@ public class AutoTradingEventProcessingServiceImpl implements AutoTradingEventPr
   }
 
   private static String koreanSide(String side) {
-    return switch (side.trim().toUpperCase()) {
+    return switch (side.trim().toUpperCase(java.util.Locale.ROOT)) {
       case "BUY" -> "매수";
       case "SELL" -> "매도";
       default -> side.trim();

@@ -16,8 +16,6 @@ public interface AutoTradingSessionRepository extends JpaRepository<AutoTradingS
 
   Optional<AutoTradingSession> findBySessionId(String sessionId);
 
-  Optional<AutoTradingSession> findFirstByIdempotencyKeyOrderByCreatedAtDesc(String idempotencyKey);
-
   Optional<AutoTradingSession> findByActiveSlot(String activeSlot);
 
   boolean existsByActiveSlot(String activeSlot);

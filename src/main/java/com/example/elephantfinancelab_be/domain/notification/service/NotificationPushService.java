@@ -14,9 +14,10 @@ public class NotificationPushService {
   private final SimpMessagingTemplate messagingTemplate;
 
   public void push(Long userId, NotificationResDTO.Item notification) {
-    String destination = "/topic/users/" + userId + "/notifications";
+    String destination = "/user/" + userId + "/queue/notifications";
     try {
-      messagingTemplate.convertAndSend(destination, notification);
+      messagingTemplate.convertAndSendToUser(
+          String.valueOf(userId), "/queue/notifications", notification);
     } catch (RuntimeException exception) {
       log.warn("알림 STOMP push 실패. userId={}, destination={}", userId, destination, exception);
     }
