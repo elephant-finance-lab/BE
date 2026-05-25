@@ -40,7 +40,6 @@ class MarketIndexRedisServiceTest {
   @BeforeEach
   void setUp() {
     when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-    when(stringRedisTemplate.getExpire(MarketIndexMarket.KOSPI.getRedisKey())).thenReturn(-1L);
   }
 
   @Test
@@ -58,8 +57,8 @@ class MarketIndexRedisServiceTest {
     assertThat(saved).isTrue();
     ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
     verify(valueOperations).set(eq(MarketIndexMarket.KOSPI.getRedisKey()), jsonCaptor.capture());
-    verify(stringRedisTemplate).persist(MarketIndexMarket.KOSPI.getRedisKey());
-    verify(stringRedisTemplate).getExpire(MarketIndexMarket.KOSPI.getRedisKey());
+    verify(stringRedisTemplate, never()).persist(anyString());
+    verify(stringRedisTemplate, never()).getExpire(anyString());
 
     JsonNode savedJson = objectMapper.readTree(jsonCaptor.getValue());
     assertThat(savedJson.path("market").asText()).isEqualTo("KOSPI");
@@ -77,7 +76,22 @@ class MarketIndexRedisServiceTest {
 
     assertThat(saved).isFalse();
     verify(valueOperations, never()).set(anyString(), anyString());
-    verify(stringRedisTemplate, never()).persist(anyString());
+  }
+
+  @Test
+  void saveSkipsNullMarketWithoutOverwritingRedis() {
+    MarketIndexResDTO.MarketIndex index =
+        new MarketIndexResDTO.MarketIndex(
+            "KOSPI",
+            new BigDecimal("2735.24"),
+            new BigDecimal("12.31"),
+            new BigDecimal("0.45"),
+            TIMESTAMP);
+
+    boolean saved = service.save(null, index);
+
+    assertThat(saved).isFalse();
+    verify(valueOperations, never()).set(anyString(), anyString());
   }
 
   @Test

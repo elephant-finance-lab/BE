@@ -23,24 +23,20 @@ public class MarketIndexRedisService {
   public boolean save(MarketIndexMarket market, MarketIndexResDTO.MarketIndex index) {
     String skipReason = invalidReason(market, index);
     if (skipReason != null) {
+      String key = market == null ? "unknown" : market.getRedisKey();
       log.warn(
-          "market index redis save skipped: key={}, reason={}, ttlPolicy=none",
-          market.getRedisKey(),
-          skipReason);
+          "market index redis save skipped: key={}, reason={}, ttlPolicy=none", key, skipReason);
       return false;
     }
 
     try {
       String json = objectMapper.writeValueAsString(index);
       stringRedisTemplate.opsForValue().set(market.getRedisKey(), json);
-      stringRedisTemplate.persist(market.getRedisKey());
-      Long ttlSeconds = stringRedisTemplate.getExpire(market.getRedisKey());
-      log.info(
-          "market index saved: key={}, value={}, timestamp={}, ttlPolicy=none, ttlSeconds={}",
+      log.debug(
+          "market index saved: key={}, value={}, timestamp={}, ttlPolicy=none",
           market.getRedisKey(),
           index.value(),
-          index.timestamp(),
-          ttlSeconds);
+          index.timestamp());
       return true;
     } catch (JsonProcessingException e) {
       throw new ChartException(ChartErrorCode.MARKET_INDEX_CACHE_SERIALIZE_FAILED, e);
@@ -78,6 +74,9 @@ public class MarketIndexRedisService {
   }
 
   private String invalidReason(MarketIndexMarket market, MarketIndexResDTO.MarketIndex index) {
+    if (market == null) {
+      return "null-market";
+    }
     if (index == null) {
       return "null-index";
     }

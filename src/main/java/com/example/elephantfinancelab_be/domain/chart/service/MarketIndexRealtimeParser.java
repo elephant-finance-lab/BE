@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 @Slf4j
 @Component
@@ -40,7 +41,7 @@ public class MarketIndexRealtimeParser {
   }
 
   public List<ParsedMarketIndex> parseAll(String message) {
-    if (message == null || message.isBlank()) {
+    if (!StringUtils.hasText(message)) {
       log.warn("{}, reason=empty-message", PARSE_FAILED_LOG);
       return List.of();
     }
@@ -114,7 +115,7 @@ public class MarketIndexRealtimeParser {
   private Optional<MarketIndexResDTO.MarketIndex> toMarketIndex(
       MarketIndexMarket market, String[] fields, int offset) {
     String changeSign = fields[offset + CHANGE_SIGN_FIELD];
-    if (!hasText(changeSign)) {
+    if (!StringUtils.hasText(changeSign)) {
       log.warn("{}, market={}, reason=blank-change-sign", PARSE_FAILED_LOG, market.name());
       return Optional.empty();
     }
@@ -163,7 +164,7 @@ public class MarketIndexRealtimeParser {
 
   private Optional<BigDecimal> parseDecimal(
       MarketIndexMarket market, String fieldName, String value) {
-    if (!hasText(value)) {
+    if (!StringUtils.hasText(value)) {
       log.warn(
           "{}, market={}, reason=blank-decimal, field={}",
           PARSE_FAILED_LOG,
@@ -202,7 +203,7 @@ public class MarketIndexRealtimeParser {
 
   private LocalDateTime parseTimestamp(String kisTime) {
     LocalDate today = LocalDate.now(KOREA_ZONE);
-    if (kisTime == null || kisTime.isBlank()) {
+    if (!StringUtils.hasText(kisTime)) {
       LocalDateTime receivedAt = LocalDateTime.now(KOREA_ZONE).withNano(0);
       log.warn("market index timestamp missing, use received time: timestamp={}", receivedAt);
       return receivedAt;
@@ -224,10 +225,6 @@ public class MarketIndexRealtimeParser {
           receivedAt);
       return receivedAt;
     }
-  }
-
-  private boolean hasText(String value) {
-    return value != null && !value.isBlank();
   }
 
   public record ParsedMarketIndex(MarketIndexMarket market, MarketIndexResDTO.MarketIndex index) {}
