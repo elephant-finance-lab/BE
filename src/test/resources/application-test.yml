@@ -46,3 +46,6 @@ ai:
     host: localhost
     port: 50051
     timeout: 5
+  paper-auto:
+    bundle-id: BUNDLE-TEST
+    confirm-phrase: PAPER_AUTO_OK
