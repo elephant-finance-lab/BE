@@ -16,8 +16,8 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class StockPricePushService {
 
+  // 변경내용: StockSummaryRedisService 제거 (Redis 캐시 미사용)
   private final StockRepository stockRepository;
-  private final StockSummaryRedisService stockSummaryRedisService;
   private final StockChartRealtimeService stockChartRealtimeService;
   private final SimpMessagingTemplate messagingTemplate;
 
@@ -45,17 +45,7 @@ public class StockPricePushService {
             parsed.signCode(),
             parsed.updatedAt());
 
-    try {
-      stockSummaryRedisService.save(summary);
-    } catch (RuntimeException e) {
-      log.warn(
-          "code={}, message={}, ticker={}",
-          StockErrorCode.STOCK_SUMMARY_CACHE_SAVE_FAILED.getCode(),
-          StockErrorCode.STOCK_SUMMARY_CACHE_SAVE_FAILED.getMessage(),
-          stock.getTicker(),
-          e);
-    }
-
+    // 변경내용: Redis 캐시 저장 제거
     try {
       messagingTemplate.convertAndSend(destination(stock.getTicker()), summary);
       log.debug("종목 실시간 체결가 push 완료. ticker={}", stock.getTicker());

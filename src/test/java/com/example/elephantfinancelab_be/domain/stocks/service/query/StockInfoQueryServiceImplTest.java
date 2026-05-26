@@ -29,7 +29,8 @@ class StockInfoQueryServiceImplTest {
     when(stockFinancialQueryService.getFinancial("005930", "INCOME", "QUARTER"))
         .thenReturn(financial());
 
-    StockInfoResDTO.Info result = service.getInfo("005930", "QUARTER").block();
+    // 변경내용: .block() 제거, 동기 반환으로 변경
+    StockInfoResDTO.Info result = service.getInfo("005930", "QUARTER");
 
     assertThat(result.ticker()).isEqualTo("005930");
     assertThat(result.nameKor()).isEqualTo("삼성전자");
@@ -60,7 +61,8 @@ class StockInfoQueryServiceImplTest {
                 null,
                 null));
 
-    StockInfoResDTO.Info result = service.getInfo("005930", "QUARTER").block();
+    // 변경내용: .block() 제거, 동기 반환으로 변경
+    StockInfoResDTO.Info result = service.getInfo("005930", "QUARTER");
 
     assertThat(result.financialSummary().columns()).isEmpty();
     assertThat(result.financialSummary().rows()).isEmpty();
@@ -73,7 +75,8 @@ class StockInfoQueryServiceImplTest {
     when(stockFinancialQueryService.getFinancial("005930", "INCOME", "QUARTER"))
         .thenReturn(shuffledFinancial());
 
-    StockInfoResDTO.Info result = service.getInfo("005930", "QUARTER").block();
+    // 변경내용: .block() 제거, 동기 반환으로 변경
+    StockInfoResDTO.Info result = service.getInfo("005930", "QUARTER");
 
     assertThat(result.financialSummary().rows())
         .extracting(StockInfoResDTO.Row::label)
