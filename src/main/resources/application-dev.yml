@@ -85,3 +85,13 @@ auto-trading:
     enabled: ${AUTO_TRADING_KAFKA_ENABLED:true}
     topic: ${AUTO_TRADING_KAFKA_TOPIC:${KAFKA_TOPIC:elephant-paper-trading-events}}
     group-id: ${AUTO_TRADING_KAFKA_GROUP_ID:elephant-be-auto-trading}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: prometheus, health
+  metrics:
+    export:
+      prometheus:
+        enabled: true

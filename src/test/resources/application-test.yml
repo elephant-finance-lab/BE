@@ -57,3 +57,13 @@ auto-trading:
     enabled: false
     topic: elephant-paper-trading-events
     group-id: elephant-be-auto-trading-test
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: prometheus, health
+  metrics:
+    export:
+      prometheus:
+        enabled: true
