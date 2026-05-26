@@ -4,14 +4,11 @@ import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockChartResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockFinancialResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockInfoResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.entity.StockFinancialPeriod;
-import com.example.elephantfinancelab_be.domain.stocks.exception.StockException;
 import java.util.Comparator;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 @Service
 @RequiredArgsConstructor
@@ -28,21 +25,18 @@ public class StockInfoQueryServiceImpl implements StockInfoQueryService {
   private final StockFinancialQueryService stockFinancialQueryService;
 
   @Override
-  public Mono<StockInfoResDTO.Info> getInfo(String ticker, String period) {
+  public StockInfoResDTO.Info getInfo(String ticker, String period) {
     StockFinancialPeriod financialPeriod = StockFinancialPeriod.from(period);
-    Mono<StockChartResDTO.Chart> oneDayChartMono =
-        blockingMono(() -> stockChartQueryService.getChart(ticker, ONE_DAY_RANGE, LINE_CHART_TYPE));
-    Mono<StockChartResDTO.Chart> oneYearChartMono =
-        blockingMono(
-            () -> stockChartQueryService.getChart(ticker, ONE_YEAR_RANGE, LINE_CHART_TYPE));
-    Mono<StockFinancialResDTO.Financial> financialMono =
-        blockingMono(
-            () ->
-                stockFinancialQueryService.getFinancial(
-                    ticker, INCOME_STATEMENT, financialPeriod.name()));
 
-    return Mono.zip(oneDayChartMono, oneYearChartMono, financialMono)
-        .map(tuple -> toInfo(tuple.getT1(), tuple.getT2(), tuple.getT3()));
+    // 변경내용: Mono.zip 병렬 조회 제거, 순차 호출로 변경
+    StockChartResDTO.Chart oneDayChart =
+        stockChartQueryService.getChart(ticker, ONE_DAY_RANGE, LINE_CHART_TYPE);
+    StockChartResDTO.Chart oneYearChart =
+        stockChartQueryService.getChart(ticker, ONE_YEAR_RANGE, LINE_CHART_TYPE);
+    StockFinancialResDTO.Financial financial =
+        stockFinancialQueryService.getFinancial(ticker, INCOME_STATEMENT, financialPeriod.name());
+
+    return toInfo(oneDayChart, oneYearChart, financial);
   }
 
   private StockInfoResDTO.Info toInfo(
@@ -93,9 +87,7 @@ public class StockInfoQueryServiceImpl implements StockInfoQueryService {
   }
 
   private Long minLowPrice(List<StockChartResDTO.DataPoint> data) {
-    if (data == null || data.isEmpty()) {
-      return null;
-    }
+    if (data == null || data.isEmpty()) return null;
     return data.stream()
         .map(StockChartResDTO.DataPoint::low)
         .filter(value -> value != null)
@@ -104,9 +96,7 @@ public class StockInfoQueryServiceImpl implements StockInfoQueryService {
   }
 
   private Long maxHighPrice(List<StockChartResDTO.DataPoint> data) {
-    if (data == null || data.isEmpty()) {
-      return null;
-    }
+    if (data == null || data.isEmpty()) return null;
     return data.stream()
         .map(StockChartResDTO.DataPoint::high)
         .filter(value -> value != null)
@@ -115,30 +105,16 @@ public class StockInfoQueryServiceImpl implements StockInfoQueryService {
   }
 
   private StockChartResDTO.DataPoint firstPoint(List<StockChartResDTO.DataPoint> data) {
-    if (data == null || data.isEmpty()) {
-      return null;
-    }
+    if (data == null || data.isEmpty()) return null;
     return data.get(0);
   }
 
   private StockChartResDTO.DataPoint lastPoint(List<StockChartResDTO.DataPoint> data) {
-    if (data == null || data.isEmpty()) {
-      return null;
-    }
+    if (data == null || data.isEmpty()) return null;
     return data.get(data.size() - 1);
   }
 
   private <T> List<T> safeList(List<T> values) {
     return values == null ? List.of() : values;
-  }
-
-  private <T> Mono<T> blockingMono(BlockingSupplier<T> supplier) {
-    return Mono.fromCallable(supplier::get).subscribeOn(Schedulers.boundedElastic());
-  }
-
-  @FunctionalInterface
-  private interface BlockingSupplier<T> {
-
-    T get() throws StockException;
   }
 }
