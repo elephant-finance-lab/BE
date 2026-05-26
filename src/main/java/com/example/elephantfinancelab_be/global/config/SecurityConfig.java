@@ -65,6 +65,7 @@ public class SecurityConfig {
     "/api/auth/login/**",
     "/ws",
     "/ws/**",
+    "/actuator/**",
   };
 
   private void writeApiFailure(HttpServletResponse response, BaseErrorCode errorCode)
