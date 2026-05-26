@@ -16,6 +16,7 @@ class RecommendationConverterTest {
             .ranking(1)
             .tickerCode("005930")
             .companyName("삼성전자")
+            .recommendReason("반도체 업황 회복과 안정적인 사업 구성을 반영한 추천입니다.")
             .build();
 
     RecommendationResDTO.RecommendationInfoDTO result =
@@ -24,5 +25,8 @@ class RecommendationConverterTest {
     assertThat(result.getRecommendationId()).isEqualTo(42L);
     assertThat(result.getRank()).isEqualTo(1);
     assertThat(result.getTickerCode()).isEqualTo("005930");
+    assertThat(result.getStockCode()).isEqualTo("005930");
+    assertThat(result.getStockName()).isEqualTo("삼성전자");
+    assertThat(result.getReason()).isEqualTo("반도체 업황 회복과 안정적인 사업 구성을 반영한 추천입니다.");
   }
 }

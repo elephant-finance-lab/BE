@@ -142,6 +142,10 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     }
 
     if (!response.getAccepted()) {
+      if ("NOT_RUNNING".equalsIgnoreCase(response.getStatus())) {
+        session.markStopped(aiMessage(response.getStatus(), response.getReason()));
+        return AutoTradingConverter.toSession(autoTradingSessionRepository.saveAndFlush(session));
+      }
       session.restoreStatus(previousStatus, aiMessage(response.getStatus(), response.getReason()));
       autoTradingSessionRepository.saveAndFlush(session);
       throw new AutoTradingException(AutoTradingErrorCode.AI_STOP_REJECTED);

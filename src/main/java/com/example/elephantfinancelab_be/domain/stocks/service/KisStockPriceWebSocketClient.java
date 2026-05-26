@@ -203,26 +203,56 @@ public class KisStockPriceWebSocketClient {
                     ticker))));
   }
 
-  private void handleMessage(String message) {
+  private void handleMessage(WebSocket socket, String message) {
     if (message.startsWith("{")) {
-      logSubscriptionResponse(message);
+      handleControlMessage(socket, message);
       return;
     }
 
     stockPriceRealtimeParser.parseAll(message).forEach(stockPricePushService::updateAndPush);
   }
 
-  private void logSubscriptionResponse(String message) {
+  void handleControlMessage(WebSocket socket, String message) {
     try {
       JsonNode root = objectMapper.readTree(message);
       JsonNode header = root.path("header");
+      if ("PINGPONG".equals(header.path("tr_id").asText())) {
+        socket
+            .sendText(message, true)
+            .whenComplete(
+                (unused, throwable) -> {
+                  if (throwable != null) {
+                    log.warn(
+                        "code={}, message={}, phase=pingpong",
+                        StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getCode(),
+                        StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getMessage(),
+                        throwable);
+                  }
+                });
+        log.debug("한국투자증권 종목 체결가 웹소켓 PINGPONG 응답 전송");
+        return;
+      }
+
       JsonNode body = root.path("body");
+      String responseCode = body.path("rt_cd").asText();
+      if (!"0".equals(responseCode)) {
+        log.warn(
+            "한국투자증권 종목 체결가 웹소켓 구독 거절. tr_id={}, tr_key={}, rt_cd={}, msg_cd={}, msg1={}",
+            header.path("tr_id").asText(),
+            header.path("tr_key").asText(),
+            responseCode,
+            body.path("msg_cd").asText(),
+            body.path("msg1").asText());
+        return;
+      }
+
       log.info(
-          "한국투자증권 종목 체결가 웹소켓 응답. tr_id={}, tr_key={}, rt_cd={}, msg_cd={}",
+          "한국투자증권 종목 체결가 웹소켓 응답. tr_id={}, tr_key={}, rt_cd={}, msg_cd={}, msg1={}",
           header.path("tr_id").asText(),
           header.path("tr_key").asText(),
-          body.path("rt_cd").asText(),
-          body.path("msg_cd").asText());
+          responseCode,
+          body.path("msg_cd").asText(),
+          body.path("msg1").asText());
     } catch (JsonProcessingException e) {
       log.debug("한국투자증권 종목 체결가 웹소켓 비데이터 메시지를 수신했습니다.");
     }
@@ -261,7 +291,7 @@ public class KisStockPriceWebSocketClient {
       textBuffer.append(data);
       if (last) {
         try {
-          handleMessage(textBuffer.toString());
+          handleMessage(socket, textBuffer.toString());
         } catch (RuntimeException e) {
           log.warn(
               "code={}, message={}, phase=handle-message",

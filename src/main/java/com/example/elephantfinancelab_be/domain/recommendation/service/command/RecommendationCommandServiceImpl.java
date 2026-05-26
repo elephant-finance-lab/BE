@@ -8,7 +8,12 @@ import com.example.elephantfinancelab_be.domain.recommendation.exception.code.Re
 import com.example.elephantfinancelab_be.domain.recommendation.repository.RecommendationRepository;
 import com.example.elephantfinancelab_be.domain.recommendation.repository.UserSelectedRecommendationRepository;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.GeneralException;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,23 +30,25 @@ public class RecommendationCommandServiceImpl implements RecommendationCommandSe
   public RecommendationResDTO.RecommendationSelectDTO saveSelectedRecommendations(
       Long userId, RecommendationReqDTO.SelectRecommendationDTO request) {
 
-    if (request == null || request.getSelectedRecommendations() == null) {
-      throw new GeneralException(RecommendationErrorCode.NO_SELECTED_RECOMMENDATION);
+    List<RecommendationSelection> selections = extractSelections(request);
+    Map<Long, Recommendation> recommendationById = new LinkedHashMap<>();
+    for (RecommendationSelection selection : selections) {
+      Recommendation recommendation = findRecommendation(selection);
+      recommendationById.putIfAbsent(recommendation.getId(), recommendation);
     }
 
-    List<Long> ids =
-        request.getSelectedRecommendations().stream()
-            .map(RecommendationReqDTO.RecommendationIdDTO::getRecommendationId)
-            .toList();
+    List<Recommendation> recommendations = List.copyOf(recommendationById.values());
+    List<Long> ids = recommendations.stream().map(Recommendation::getId).toList();
+    Set<Long> alreadySelectedIds =
+        userSelectedRecommendationRepository
+            .findAllByUserIdAndRecommendation_IdIn(userId, ids)
+            .stream()
+            .map(item -> item.getRecommendation().getId())
+            .collect(Collectors.toSet());
 
-    if (ids.isEmpty()) {
-      throw new GeneralException(RecommendationErrorCode.NO_SELECTED_RECOMMENDATION);
-    }
-
-    List<Recommendation> recommendations = recommendationRepository.findAllById(ids);
-
-    List<UserSelectedRecommendation> entities =
+    List<UserSelectedRecommendation> entitiesToSave =
         recommendations.stream()
+            .filter(recommendation -> !alreadySelectedIds.contains(recommendation.getId()))
             .map(
                 recommendation ->
                     UserSelectedRecommendation.builder()
@@ -50,52 +57,67 @@ public class RecommendationCommandServiceImpl implements RecommendationCommandSe
                         .build())
             .toList();
 
-    userSelectedRecommendationRepository.saveAll(entities);
+    if (!entitiesToSave.isEmpty()) {
+      userSelectedRecommendationRepository.saveAll(entitiesToSave);
+    }
 
     return RecommendationResDTO.RecommendationSelectDTO.builder()
         .selectedCount(ids.size())
         .recommendationIds(ids)
+        .stockCodes(recommendations.stream().map(Recommendation::getTickerCode).toList())
         .build();
   }
 
-  @Override
-  public RecommendationResDTO.PurchaseOptionDTO savePurchaseOption(
-      Long userId, RecommendationReqDTO.PurchaseOptionRequestDTO request) {
-
-    if (!userSelectedRecommendationRepository.existsByUserId(userId)) {
-      throw new GeneralException(RecommendationErrorCode.NO_PRIOR_SELECTION);
+  private List<RecommendationSelection> extractSelections(
+      RecommendationReqDTO.SelectRecommendationDTO request) {
+    if (request == null) {
+      throw new GeneralException(RecommendationErrorCode.NO_SELECTED_RECOMMENDATION);
     }
 
-    return switch (request.getOptionId()) {
-      case 1 ->
-          RecommendationResDTO.PurchaseOptionDTO.builder()
-              .optionId(1)
-              .minRate(5)
-              .maxRate(10)
-              .label("5 ~ 10%")
-              .build();
-      case 2 ->
-          RecommendationResDTO.PurchaseOptionDTO.builder()
-              .optionId(2)
-              .minRate(10)
-              .maxRate(15)
-              .label("10 ~ 15%")
-              .build();
-      case 3 ->
-          RecommendationResDTO.PurchaseOptionDTO.builder()
-              .optionId(3)
-              .minRate(15)
-              .maxRate(20)
-              .label("15 ~ 20%")
-              .build();
-      case 4 ->
-          RecommendationResDTO.PurchaseOptionDTO.builder()
-              .optionId(4)
-              .minRate(20)
-              .maxRate(30)
-              .label("20 ~ 30%")
-              .build();
-      default -> throw new GeneralException(RecommendationErrorCode.NO_PRIOR_SELECTION);
-    };
+    List<RecommendationSelection> selections = new ArrayList<>();
+    if (request.getRecommendationId() != null || hasText(request.getStockCode())) {
+      selections.add(
+          new RecommendationSelection(request.getRecommendationId(), request.getStockCode()));
+    }
+    if (request.getSelectedRecommendations() != null) {
+      request
+          .getSelectedRecommendations()
+          .forEach(
+              item -> {
+                if (item != null
+                    && (item.getRecommendationId() != null || hasText(item.getStockCode()))) {
+                  selections.add(
+                      new RecommendationSelection(item.getRecommendationId(), item.getStockCode()));
+                }
+              });
+    }
+    if (selections.isEmpty()) {
+      throw new GeneralException(RecommendationErrorCode.NO_SELECTED_RECOMMENDATION);
+    }
+    return selections;
   }
+
+  private Recommendation findRecommendation(RecommendationSelection selection) {
+    if (selection.recommendationId() != null) {
+      Recommendation recommendation =
+          recommendationRepository
+              .findById(selection.recommendationId())
+              .orElseThrow(
+                  () -> new GeneralException(RecommendationErrorCode.RECOMMENDATION_NOT_FOUND));
+      if (hasText(selection.stockCode())
+          && !recommendation.getTickerCode().equalsIgnoreCase(selection.stockCode().trim())) {
+        throw new GeneralException(RecommendationErrorCode.RECOMMENDATION_NOT_FOUND);
+      }
+      return recommendation;
+    }
+    return recommendationRepository
+        .findByTickerCodeIgnoreCase(selection.stockCode().trim())
+        .orElseThrow(() -> new GeneralException(RecommendationErrorCode.RECOMMENDATION_NOT_FOUND));
+  }
+
+  private static boolean hasText(String value) {
+    return value != null && !value.isBlank();
+  }
+
+  private record RecommendationSelection(Long recommendationId, String stockCode) {}
 }

@@ -118,6 +118,10 @@ ai:
   paper-auto:
     bundle-id: ${AI_PAPER_BUNDLE_ID:}
     confirm-phrase: ${AI_PAPER_CONFIRM_PHRASE:PAPER_AUTO_OK}
+  recommendations:
+    bundle-id: ${AI_RECOMMENDATION_BUNDLE_ID:}
+    top-k: ${AI_RECOMMENDATION_TOP_K:10}
+    include-diagnostics: ${AI_RECOMMENDATION_INCLUDE_DIAGNOSTICS:false}
 
 auto-trading:
   kafka:

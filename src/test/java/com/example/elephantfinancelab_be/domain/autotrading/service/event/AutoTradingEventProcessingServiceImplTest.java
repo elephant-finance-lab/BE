@@ -237,6 +237,96 @@ class AutoTradingEventProcessingServiceImplTest {
             "be-session-4");
   }
 
+  @Test
+  void mapsCompletedTerminalStopEventToCompletedSession() {
+    AutoTradingSession session =
+        AutoTradingSession.builder()
+            .sessionId("be-session-completed")
+            .userId(5L)
+            .aiSessionId("ai-session-completed")
+            .status(AutoTradingSessionStatus.RUNNING)
+            .build();
+    var payload =
+        new ObjectMapper()
+            .createObjectNode()
+            .put("stop_reason", "COMPLETED")
+            .put("terminal_status", "PASS");
+    AutoTradingKafkaEvent event =
+        new AutoTradingKafkaEvent(
+            "event-completed",
+            "sha256:event-completed",
+            AutoTradingEventType.AUTO_TRADING_STOPPED,
+            AutoTradingEventType.AUTO_TRADING_STOPPED.name(),
+            "ai-session-completed",
+            "start-request-completed",
+            null,
+            null,
+            null,
+            "BUNDLE-1",
+            "ai-session-completed",
+            "{}",
+            "{}",
+            payload,
+            LocalDateTime.of(2026, 5, 25, 12, 0));
+    when(parser.parse("ai-session-completed", "{}")).thenReturn(event);
+    when(sessionRepository.findFirstByAiSessionIdOrderByCreatedAtDesc("ai-session-completed"))
+        .thenReturn(Optional.of(session));
+
+    service.process("ai-session-completed", "{}");
+
+    assertThat(session.getStatus()).isEqualTo(AutoTradingSessionStatus.COMPLETED);
+    verify(sessionRepository).saveAndFlush(session);
+  }
+
+  @Test
+  void mapsFailedTerminalStopEventToFailedSessionAndErrorNotification() {
+    AutoTradingSession session =
+        AutoTradingSession.builder()
+            .sessionId("be-session-failed")
+            .userId(6L)
+            .aiSessionId("ai-session-failed")
+            .status(AutoTradingSessionStatus.RUNNING)
+            .build();
+    var payload =
+        new ObjectMapper()
+            .createObjectNode()
+            .put("stop_reason", "COMPLETED")
+            .put("terminal_status", "FAIL");
+    AutoTradingKafkaEvent event =
+        new AutoTradingKafkaEvent(
+            "event-failed",
+            "sha256:event-failed",
+            AutoTradingEventType.AUTO_TRADING_STOPPED,
+            AutoTradingEventType.AUTO_TRADING_STOPPED.name(),
+            "ai-session-failed",
+            "start-request-failed",
+            null,
+            null,
+            null,
+            "BUNDLE-1",
+            "ai-session-failed",
+            "{}",
+            "{}",
+            payload,
+            LocalDateTime.of(2026, 5, 25, 12, 0));
+    when(parser.parse("ai-session-failed", "{}")).thenReturn(event);
+    when(sessionRepository.findFirstByAiSessionIdOrderByCreatedAtDesc("ai-session-failed"))
+        .thenReturn(Optional.of(session));
+
+    service.process("ai-session-failed", "{}");
+
+    assertThat(session.getStatus()).isEqualTo(AutoTradingSessionStatus.FAILED);
+    verify(notificationCommandService)
+        .create(
+            6L,
+            NotificationType.AUTO_TRADING,
+            "자동매매 오류",
+            "AI 모의 자동매매가 오류로 중단되었습니다.",
+            com.example.elephantfinancelab_be.domain.notification.entity.NotificationReferenceType
+                .AUTO_TRADING_SESSION,
+            "be-session-failed");
+  }
+
   private static AutoTradingKafkaEvent event(AutoTradingEventType type, String aiSessionId) {
     return event(type, aiSessionId, null);
   }

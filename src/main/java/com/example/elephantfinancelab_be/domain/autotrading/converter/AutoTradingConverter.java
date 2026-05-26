@@ -32,6 +32,7 @@ public final class AutoTradingConverter {
       AutoTradingSession session, PaperAutoTradingStatusResponse response, boolean matchesSession) {
     return AutoTradingResDTO.AiStatus.builder()
         .sessionId(session.getSessionId())
+        .sessionStatus(session.getStatus())
         .aiSessionId(response.getSessionId())
         .matchesSession(matchesSession)
         .running(response.getRunning())
@@ -41,6 +42,12 @@ public final class AutoTradingConverter {
         .startedAt(response.getStartedAt())
         .bundleId(response.getBundleId())
         .lastCycleAt(response.getLastCycleAt())
+        .stopRequested(response.getStopRequested())
+        .terminalStatus(response.getTerminalStatus())
+        .stopReason(response.getStopReason())
+        .endedAt(response.getEndedAt())
+        .reportPath(response.getReportPath())
+        .lastError(response.getLastError())
         .build();
   }
 

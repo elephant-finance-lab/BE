@@ -82,6 +82,67 @@ class AutoTradingQueryServiceImplTest {
   }
 
   @Test
+  void persistsFailedStatusWhenAiReportsMatchingFailedTerminalSession() {
+    AutoTradingSession session =
+        AutoTradingSession.builder()
+            .sessionId("be-session-failed")
+            .userId(1L)
+            .status(AutoTradingSessionStatus.RUNNING)
+            .aiSessionId("ai-session-failed")
+            .aiRequestId("start-request-failed")
+            .build();
+    when(sessionRepository.findBySessionIdAndUserId("be-session-failed", 1L))
+        .thenReturn(Optional.of(session));
+    when(aiServerClient.getPaperAutoTradingStatus("start-request-failed"))
+        .thenReturn(
+            PaperAutoTradingStatusResponse.newBuilder()
+                .setSessionId("ai-session-failed")
+                .setStatus("IDLE")
+                .setRunning(false)
+                .setTerminalStatus("FAIL")
+                .setLastError("PAPER_MODE_REQUIRED")
+                .build());
+    when(sessionRepository.saveAndFlush(session)).thenReturn(session);
+
+    AutoTradingResDTO.AiStatus result = service.findAiStatus(1L, "be-session-failed");
+
+    assertThat(result.isMatchesSession()).isTrue();
+    assertThat(result.getSessionStatus()).isEqualTo(AutoTradingSessionStatus.FAILED);
+    assertThat(result.getTerminalStatus()).isEqualTo("FAIL");
+    assertThat(session.getStatus()).isEqualTo(AutoTradingSessionStatus.FAILED);
+    verify(sessionRepository).saveAndFlush(session);
+  }
+
+  @Test
+  void closesStaleRunningSessionWhenAiServerHasNoTrackedSession() {
+    AutoTradingSession session =
+        AutoTradingSession.builder()
+            .sessionId("be-session-stale")
+            .userId(1L)
+            .status(AutoTradingSessionStatus.RUNNING)
+            .aiSessionId("ai-session-stale")
+            .aiRequestId("start-request-stale")
+            .build();
+    when(sessionRepository.findBySessionIdAndUserId("be-session-stale", 1L))
+        .thenReturn(Optional.of(session));
+    when(aiServerClient.getPaperAutoTradingStatus("start-request-stale"))
+        .thenReturn(
+            PaperAutoTradingStatusResponse.newBuilder()
+                .setStatus("IDLE")
+                .setRunning(false)
+                .build());
+    when(sessionRepository.saveAndFlush(session)).thenReturn(session);
+
+    AutoTradingResDTO.AiStatus result = service.findAiStatus(1L, "be-session-stale");
+
+    assertThat(result.isMatchesSession()).isFalse();
+    assertThat(result.getSessionStatus()).isEqualTo(AutoTradingSessionStatus.STOPPED);
+    assertThat(session.getStatus()).isEqualTo(AutoTradingSessionStatus.STOPPED);
+    assertThat(session.getAiStatusMessage()).contains("AI 서버에 실행 세션이 없습니다.");
+    verify(sessionRepository).saveAndFlush(session);
+  }
+
+  @Test
   void rejectsAiStatusQueryWhenStartRequestIdIsMissing() {
     AutoTradingSession session =
         AutoTradingSession.builder()

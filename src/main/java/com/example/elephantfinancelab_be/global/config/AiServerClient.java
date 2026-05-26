@@ -5,6 +5,8 @@ import com.elephant.ai.v1.AiBeBridgeServiceGrpc;
 import com.elephant.ai.v1.ExecutionFeedbackEnvelope;
 import com.elephant.ai.v1.FinalDecisionEnvelope;
 import com.elephant.ai.v1.GetPaperAutoTradingStatusRequest;
+import com.elephant.ai.v1.GetRecommendationsRequest;
+import com.elephant.ai.v1.GetRecommendationsResponse;
 import com.elephant.ai.v1.HealthCheckRequest;
 import com.elephant.ai.v1.HealthCheckResponse;
 import com.elephant.ai.v1.InternalMessageEnvelope;
@@ -135,6 +137,28 @@ public class AiServerClient {
     try {
       stubWithDeadline().publishAgentReport(envelope);
       log.info("[AI Client] AgentReport 전송 완료: {}", envelope.getReportId());
+    } catch (StatusRuntimeException e) {
+      throw mapToAiServerException(e);
+    }
+  }
+
+  public GetRecommendationsResponse getRecommendations(
+      String bundleId, Integer topK, boolean includeDiagnostics) {
+    try {
+      GetRecommendationsRequest.Builder request =
+          GetRecommendationsRequest.newBuilder()
+              .setRequestId(UUID.randomUUID().toString())
+              .setBundleId(bundleId != null ? bundleId : "")
+              .setIncludeDiagnostics(includeDiagnostics);
+      if (topK != null) {
+        request.setTopK(topK);
+      }
+      GetRecommendationsResponse response = stubWithDeadline().getRecommendations(request.build());
+      log.info(
+          "[AI Client] 추천 조회 완료: status={}, count={}",
+          response.getStatus(),
+          response.getRecommendationsCount());
+      return response;
     } catch (StatusRuntimeException e) {
       throw mapToAiServerException(e);
     }

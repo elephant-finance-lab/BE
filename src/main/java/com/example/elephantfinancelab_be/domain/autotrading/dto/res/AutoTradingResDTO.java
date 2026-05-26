@@ -36,6 +36,7 @@ public class AutoTradingResDTO {
   @AllArgsConstructor
   public static class AiStatus {
     private String sessionId;
+    private AutoTradingSessionStatus sessionStatus;
     private String aiSessionId;
     private boolean matchesSession;
     private boolean running;
@@ -45,5 +46,11 @@ public class AutoTradingResDTO {
     private String startedAt;
     private String bundleId;
     private String lastCycleAt;
+    private boolean stopRequested;
+    private String terminalStatus;
+    private String stopReason;
+    private String endedAt;
+    private String reportPath;
+    private String lastError;
   }
 }

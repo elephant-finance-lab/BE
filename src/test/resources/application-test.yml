@@ -51,6 +51,10 @@ ai:
   paper-auto:
     bundle-id: BUNDLE-TEST
     confirm-phrase: PAPER_AUTO_OK
+  recommendations:
+    bundle-id: BUNDLE-TEST
+    top-k: 10
+    include-diagnostics: false
 
 auto-trading:
   kafka:
