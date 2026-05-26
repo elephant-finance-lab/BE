@@ -37,6 +37,7 @@ jwt:
   refresh-expiration: 1209600000
 
 kis:
+  mode: real
   app-key: test-app-key
   app-secret: test-app-secret
   base-url: https://openapi.koreainvestment.com:9443

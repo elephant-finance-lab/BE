@@ -4,9 +4,9 @@ import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.entity.Stock;
 import com.example.elephantfinancelab_be.domain.stocks.exception.StockException;
 import com.example.elephantfinancelab_be.domain.stocks.exception.code.StockErrorCode;
-import com.example.elephantfinancelab_be.domain.stocks.repository.StockRepository;
 import com.example.elephantfinancelab_be.domain.stocks.service.KisStockPriceClient;
 import com.example.elephantfinancelab_be.domain.stocks.service.KisStockPriceWebSocketClient;
+import com.example.elephantfinancelab_be.domain.stocks.service.StockResolverService;
 import com.example.elephantfinancelab_be.domain.stocks.service.StockSummaryRedisService;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
@@ -20,46 +20,43 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class StockQueryServiceImpl implements StockQueryService {
 
-  private final StockRepository stockRepository;
+  private final StockResolverService stockResolverService;
   private final StockSummaryRedisService stockSummaryRedisService;
   private final KisStockPriceClient kisStockPriceClient;
   private final KisStockPriceWebSocketClient kisStockPriceWebSocketClient;
 
   @Override
   public StockResDTO.Summary getSummary(String ticker) {
-    Stock stock =
-        stockRepository
-            .findByTicker(normalizeTicker(ticker))
-            .orElseThrow(() -> new StockException(StockErrorCode.STOCK_NOT_FOUND));
-
-    StockResDTO.Summary cachedSummary = findCachedSummary(stock);
+    String normalizedTicker = normalizeTicker(ticker);
+    StockResDTO.Summary cachedSummary = findCachedSummary(normalizedTicker);
     if (cachedSummary != null) {
-      kisStockPriceWebSocketClient.subscribe(stock.getTicker());
-      log.info("종목 요약 캐시 조회 성공. ticker={}", stock.getTicker());
+      kisStockPriceWebSocketClient.subscribe(normalizedTicker);
+      log.info("종목 요약 캐시 조회 성공. ticker={}", normalizedTicker);
       return cachedSummary;
     }
 
+    Stock stock = stockResolverService.resolve(normalizedTicker);
     StockResDTO.Summary summary = kisStockPriceClient.fetchSummary(stock);
-    saveSummaryCache(stock, summary);
+    saveSummaryCache(summary);
     kisStockPriceWebSocketClient.subscribe(stock.getTicker());
     return summary;
   }
 
-  private StockResDTO.Summary findCachedSummary(Stock stock) {
+  private StockResDTO.Summary findCachedSummary(String ticker) {
     try {
-      return stockSummaryRedisService.find(stock.getTicker());
+      return stockSummaryRedisService.find(ticker);
     } catch (RuntimeException e) {
       log.warn(
           "code={}, message={}, ticker={}",
           StockErrorCode.STOCK_SUMMARY_CACHE_DESERIALIZE_FAILED.getCode(),
           StockErrorCode.STOCK_SUMMARY_CACHE_DESERIALIZE_FAILED.getMessage(),
-          stock.getTicker(),
+          ticker,
           e);
       return null;
     }
   }
 
-  private void saveSummaryCache(Stock stock, StockResDTO.Summary summary) {
+  private void saveSummaryCache(StockResDTO.Summary summary) {
     try {
       stockSummaryRedisService.save(summary);
     } catch (RuntimeException e) {
@@ -67,7 +64,7 @@ public class StockQueryServiceImpl implements StockQueryService {
           "code={}, message={}, ticker={}",
           StockErrorCode.STOCK_SUMMARY_CACHE_SAVE_FAILED.getCode(),
           StockErrorCode.STOCK_SUMMARY_CACHE_SAVE_FAILED.getMessage(),
-          stock.getTicker(),
+          summary.getTicker(),
           e);
     }
   }

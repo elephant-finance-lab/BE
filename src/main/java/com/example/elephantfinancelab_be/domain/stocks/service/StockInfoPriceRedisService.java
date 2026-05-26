@@ -1,6 +1,6 @@
 package com.example.elephantfinancelab_be.domain.stocks.service;
 
-import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockResDTO;
+import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockInfoResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.exception.StockException;
 import com.example.elephantfinancelab_be.domain.stocks.exception.code.StockErrorCode;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -13,41 +13,38 @@ import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
-public class StockSummaryRedisService {
+public class StockInfoPriceRedisService {
 
-  private static final String SUMMARY_KEY_PREFIX = "stock:summary:v2:";
-  private static final Duration SUMMARY_CACHE_TTL = Duration.ofSeconds(30);
+  private static final String PRICE_KEY_PREFIX = "stock:info:price:v2:";
+  private static final Duration PRICE_CACHE_TTL = Duration.ofSeconds(30);
 
   private final StringRedisTemplate stringRedisTemplate;
   private final ObjectMapper objectMapper;
 
-  public void save(StockResDTO.Summary summary) {
+  public void save(String ticker, StockInfoResDTO.Price price) {
     try {
       stringRedisTemplate
           .opsForValue()
-          .set(
-              redisKey(summary.getTicker()),
-              objectMapper.writeValueAsString(summary),
-              SUMMARY_CACHE_TTL);
+          .set(redisKey(ticker), objectMapper.writeValueAsString(price), PRICE_CACHE_TTL);
     } catch (JsonProcessingException e) {
-      throw new StockException(StockErrorCode.STOCK_SUMMARY_CACHE_SERIALIZE_FAILED, e);
+      throw new StockException(StockErrorCode.STOCK_INFO_PRICE_CACHE_SERIALIZE_FAILED, e);
     }
   }
 
-  public StockResDTO.Summary find(String ticker) {
+  public StockInfoResDTO.Price find(String ticker) {
     String json = stringRedisTemplate.opsForValue().get(redisKey(ticker));
     if (json == null || json.isBlank()) {
       return null;
     }
 
     try {
-      return objectMapper.readValue(json, StockResDTO.Summary.class);
+      return objectMapper.readValue(json, StockInfoResDTO.Price.class);
     } catch (JsonProcessingException e) {
-      throw new StockException(StockErrorCode.STOCK_SUMMARY_CACHE_DESERIALIZE_FAILED, e);
+      throw new StockException(StockErrorCode.STOCK_INFO_PRICE_CACHE_DESERIALIZE_FAILED, e);
     }
   }
 
   private String redisKey(String ticker) {
-    return SUMMARY_KEY_PREFIX + ticker.trim().toUpperCase(Locale.ROOT);
+    return PRICE_KEY_PREFIX + ticker.trim().toUpperCase(Locale.ROOT);
   }
 }

@@ -78,12 +78,29 @@ export AI_SERVER_TIMEOUT=5
 export AI_PAPER_BUNDLE_ID="<paper-ready-bundle-id>"
 export AI_PAPER_CONFIRM_PHRASE=PAPER_AUTO_OK
 
+# BE market-data clients use the real KIS endpoint and real credentials.
+export KIS_FINANCIAL_APP_KEY="<real-market-data-app-key>"
+export KIS_FINANCIAL_APP_SECRET="<real-market-data-app-secret>"
+
 ./gradlew generateProto
 ./gradlew bootRun
 ```
 
 The existing datasource, Redis, JWT, OAuth and KIS display/market-data
 settings in `application.yml` are still required for local BE startup.
+BE ranking, missing-stock registration, quotation, chart, financial and
+real-time stock clients all use `KIS_FINANCIAL_APP_KEY` and
+`KIS_FINANCIAL_APP_SECRET` against the real KIS endpoint. BE does not execute
+KIS order requests through these market-data clients. Do not combine a paper
+app key with the real endpoint; it is rejected by KIS with `EGW02004`.
+BE market-data mode is fixed to `real`; explicit `KIS_BASE_URL`,
+`KIS_FINANCIAL_BASE_URL` and `KIS_WS_URL` overrides must use real endpoints.
+
+When an explicit financial endpoint override is needed, configure:
+
+```bash
+export KIS_FINANCIAL_BASE_URL="https://openapi.koreainvestment.com:9443"
+```
 
 ### 3) Test with Swagger or curl
 

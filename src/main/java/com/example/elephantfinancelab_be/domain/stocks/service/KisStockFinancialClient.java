@@ -38,7 +38,8 @@ public class KisStockFinancialClient {
     this.kisProperties = kisProperties;
     this.accessTokenClient = accessTokenClient;
     this.objectMapper = objectMapper;
-    this.webClient = builder.baseUrl(normalizedBaseUrl(kisProperties.getBaseUrl())).build();
+    this.webClient =
+        builder.baseUrl(normalizedBaseUrl(kisProperties.getFinancialBaseUrlOrDefault())).build();
   }
 
   public List<JsonNode> fetchFinancial(
@@ -108,7 +109,9 @@ public class KisStockFinancialClient {
 
     headers.setContentType(
         MediaType.parseMediaType(MediaType.APPLICATION_JSON_VALUE + "; charset=utf-8"));
-    headers.setBearerAuth(accessTokenClient.getAccessToken(appKey, appSecret));
+    headers.setBearerAuth(
+        accessTokenClient.getAccessToken(
+            appKey, appSecret, kisProperties.getFinancialBaseUrlOrDefault()));
     headers.set("appkey", appKey);
     headers.set("appsecret", appSecret);
     headers.set("tr_id", trId);

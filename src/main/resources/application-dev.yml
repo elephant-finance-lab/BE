@@ -1,6 +1,4 @@
 app:
-  seed:
-    enabled: ${APP_SEED_ENABLED:false}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   oauth2:
@@ -58,13 +56,15 @@ jwt:
   refresh-expiration: 1209600000
 
 kis:
-  app-key: ${KIS_APP_KEY}
-  app-secret: ${KIS_APP_SECRET}
-  base-url: ${KIS_BASE_URL}
-  financial-app-key: ${KIS_FINANCIAL_APP_KEY}
-  financial-app-secret: ${KIS_FINANCIAL_APP_SECRET}
-  websocket-url: ${KIS_WS_URL}
-  websocket-enabled: ${KIS_WEBSOCKET_ENABLED}
+  mode: real
+  app-key: ${KIS_FINANCIAL_APP_KEY:}
+  app-secret: ${KIS_FINANCIAL_APP_SECRET:}
+  base-url: ${KIS_BASE_URL:}
+  financial-app-key: ${KIS_FINANCIAL_APP_KEY:}
+  financial-app-secret: ${KIS_FINANCIAL_APP_SECRET:}
+  financial-base-url: ${KIS_FINANCIAL_BASE_URL:}
+  websocket-url: ${KIS_WS_URL:}
+  websocket-enabled: ${KIS_WEBSOCKET_ENABLED:true}
 
 logging:
   level:

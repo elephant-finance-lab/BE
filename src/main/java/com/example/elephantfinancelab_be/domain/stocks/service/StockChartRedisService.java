@@ -19,7 +19,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class StockChartRedisService {
 
-  private static final String CHART_KEY_PREFIX = "stock:chart:";
+  private static final String CHART_KEY_PREFIX = "stock:chart:v4:";
   private static final String LOCK_KEY_SUFFIX = ":lock";
   private static final DefaultRedisScript<Long> RELEASE_LOCK_SCRIPT =
       new DefaultRedisScript<>(
