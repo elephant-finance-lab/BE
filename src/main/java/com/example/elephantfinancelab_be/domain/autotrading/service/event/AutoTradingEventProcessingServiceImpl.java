@@ -67,12 +67,7 @@ public class AutoTradingEventProcessingServiceImpl implements AutoTradingEventPr
     }
 
     AutoTradingSession session = matchedSession.get();
-    boolean stoppedAfterRequest =
-        (message.eventType() == AutoTradingEventType.AUTO_TRADING_FAILED
-                && session.getStatus() == AutoTradingSessionStatus.STOPPING)
-            || (message.eventType() == AutoTradingEventType.AUTO_TRADING_STOPPED
-                && "USER_REQUESTED"
-                    .equalsIgnoreCase(payloadText(message.payload(), "stop_reason", "stopReason")));
+    boolean stoppedAfterRequest = stoppedAfterRequest(session, message);
     boolean failedTerminalStop =
         message.eventType() == AutoTradingEventType.AUTO_TRADING_STOPPED
             && isFailedStatus(payloadText(message.payload(), "terminal_status", "terminalStatus"));
@@ -109,6 +104,19 @@ public class AutoTradingEventProcessingServiceImpl implements AutoTradingEventPr
           .filter(item -> item.getStatus() == AutoTradingSessionStatus.STARTING);
     }
     return Optional.empty();
+  }
+
+  private boolean stoppedAfterRequest(AutoTradingSession session, AutoTradingKafkaEvent message) {
+    if (message.eventType() == AutoTradingEventType.AUTO_TRADING_FAILED) {
+      return session.getStatus() == AutoTradingSessionStatus.STOPPING;
+    }
+    if (message.eventType() != AutoTradingEventType.AUTO_TRADING_STOPPED) {
+      return false;
+    }
+
+    String stopReason = payloadText(message.payload(), "stop_reason", "stopReason");
+    return "USER_REQUESTED".equalsIgnoreCase(stopReason)
+        || (stopReason == null && session.getStatus() == AutoTradingSessionStatus.STOPPING);
   }
 
   private Optional<AutoTradingSession> findByAiSessionId(String value) {

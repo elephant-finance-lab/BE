@@ -74,8 +74,17 @@ public class RecommendationCommandServiceImpl implements RecommendationCommandSe
       throw new GeneralException(RecommendationErrorCode.NO_SELECTED_RECOMMENDATION);
     }
 
+    boolean hasSingleSelection =
+        request.getRecommendationId() != null || hasText(request.getStockCode());
+    boolean hasMultipleSelection =
+        request.getSelectedRecommendations() != null
+            && !request.getSelectedRecommendations().isEmpty();
+    if (hasSingleSelection == hasMultipleSelection) {
+      throw new GeneralException(RecommendationErrorCode.INVALID_RECOMMENDATION_SELECTION);
+    }
+
     List<RecommendationSelection> selections = new ArrayList<>();
-    if (request.getRecommendationId() != null || hasText(request.getStockCode())) {
+    if (hasSingleSelection) {
       selections.add(
           new RecommendationSelection(request.getRecommendationId(), request.getStockCode()));
     }

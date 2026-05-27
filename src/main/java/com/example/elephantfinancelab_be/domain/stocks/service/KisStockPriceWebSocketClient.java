@@ -15,6 +15,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -154,21 +155,17 @@ public class KisStockPriceWebSocketClient {
 
   private void subscribe(WebSocket socket, String approvalKey, String ticker) {
     try {
-      socket
-          .sendText(subscriptionMessage(approvalKey, ticker), true)
-          .whenComplete(
-              (unused, throwable) -> {
-                if (throwable != null) {
-                  log.warn(
-                      "code={}, message={}, ticker={}",
-                      StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getCode(),
-                      StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getMessage(),
-                      ticker,
-                      throwable);
-                  return;
-                }
-                log.info("한국투자증권 종목 체결가 구독 완료. ticker={}", ticker);
-              });
+      Throwable throwable = sendText(socket, subscriptionMessage(approvalKey, ticker));
+      if (throwable != null) {
+        log.warn(
+            "code={}, message={}, ticker={}",
+            StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getCode(),
+            StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getMessage(),
+            ticker,
+            throwable);
+        return;
+      }
+      log.info("한국투자증권 종목 체결가 구독 완료. ticker={}", ticker);
     } catch (JsonProcessingException e) {
       log.warn(
           "code={}, message={}, ticker={}",
@@ -217,18 +214,15 @@ public class KisStockPriceWebSocketClient {
       JsonNode root = objectMapper.readTree(message);
       JsonNode header = root.path("header");
       if ("PINGPONG".equals(header.path("tr_id").asText())) {
-        socket
-            .sendText(message, true)
-            .whenComplete(
-                (unused, throwable) -> {
-                  if (throwable != null) {
-                    log.warn(
-                        "code={}, message={}, phase=pingpong",
-                        StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getCode(),
-                        StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getMessage(),
-                        throwable);
-                  }
-                });
+        Throwable throwable = sendText(socket, message);
+        if (throwable != null) {
+          log.warn(
+              "code={}, message={}, phase=pingpong",
+              StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getCode(),
+              StockErrorCode.KIS_STOCK_PRICE_WEBSOCKET_FAILED.getMessage(),
+              throwable);
+          return;
+        }
         log.debug("한국투자증권 종목 체결가 웹소켓 PINGPONG 응답 전송");
         return;
       }
@@ -255,6 +249,19 @@ public class KisStockPriceWebSocketClient {
           body.path("msg1").asText());
     } catch (JsonProcessingException e) {
       log.debug("한국투자증권 종목 체결가 웹소켓 비데이터 메시지를 수신했습니다.");
+    }
+  }
+
+  private Throwable sendText(WebSocket socket, String message) {
+    try {
+      synchronized (socket) {
+        socket.sendText(message, true).join();
+      }
+      return null;
+    } catch (CompletionException e) {
+      return e.getCause() == null ? e : e.getCause();
+    } catch (IllegalStateException e) {
+      return e;
     }
   }
 

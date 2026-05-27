@@ -189,9 +189,6 @@ public class StockChartQueryServiceImpl implements StockChartQueryService {
 
   private StockChartResDTO.Chart findStoredChart(
       String ticker, StockChartRange chartRange, StockChartType chartType) {
-    if (chartRange == StockChartRange.ONE_DAY) {
-      return null;
-    }
     try {
       return stockSnapshotPersistenceService.findChart(ticker, chartRange, chartType);
     } catch (RuntimeException e) {
@@ -203,9 +200,6 @@ public class StockChartQueryServiceImpl implements StockChartQueryService {
 
   private void saveChartSnapshot(
       Stock stock, StockChartRange chartRange, StockChartResDTO.Chart chart) {
-    if (chartRange == StockChartRange.ONE_DAY) {
-      return;
-    }
     try {
       stockSnapshotPersistenceService.saveChart(stock, chartRange, chart);
     } catch (RuntimeException e) {

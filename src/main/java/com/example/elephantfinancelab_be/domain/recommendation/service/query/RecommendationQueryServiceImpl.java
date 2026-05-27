@@ -14,7 +14,10 @@ import com.example.elephantfinancelab_be.domain.user.repository.UserRepository;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.GeneralException;
 import com.example.elephantfinancelab_be.global.config.AiServerClient;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -55,8 +58,7 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
     }
 
     List<Recommendation> recommendations =
-        response.getRecommendationsList().stream()
-            .sorted(Comparator.comparingInt(RecommendationItem::getRanking))
+        deduplicateByStockCode(response).values().stream()
             .map(item -> upsertModelRecommendation(item, response))
             .toList();
     List<Recommendation> savedRecommendations = recommendationRepository.saveAll(recommendations);
@@ -106,13 +108,22 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
     return user.getId();
   }
 
+  private Map<String, RecommendationItem> deduplicateByStockCode(
+      GetRecommendationsResponse response) {
+    Map<String, RecommendationItem> deduplicated = new LinkedHashMap<>();
+    response.getRecommendationsList().stream()
+        .sorted(Comparator.comparingInt(RecommendationItem::getRanking))
+        .forEach(
+            item -> {
+              String stockCode = normalizedStockCode(item);
+              deduplicated.putIfAbsent(stockCode, item);
+            });
+    return deduplicated;
+  }
+
   private Recommendation upsertModelRecommendation(
       RecommendationItem item, GetRecommendationsResponse response) {
-    String stockCode =
-        item.getStockCode().isBlank() ? item.getTicker().trim() : item.getStockCode().trim();
-    if (stockCode.isBlank()) {
-      throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
-    }
+    String stockCode = normalizedStockCode(item);
     Recommendation recommendation =
         recommendationRepository
             .findByTickerCodeIgnoreCase(stockCode)
@@ -131,5 +142,14 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
         response.getGeneratedAt(),
         response.getAsof());
     return recommendation;
+  }
+
+  private String normalizedStockCode(RecommendationItem item) {
+    String stockCode =
+        item.getStockCode().isBlank() ? item.getTicker().trim() : item.getStockCode().trim();
+    if (stockCode.isBlank()) {
+      throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+    }
+    return stockCode.toUpperCase(Locale.ROOT);
   }
 }

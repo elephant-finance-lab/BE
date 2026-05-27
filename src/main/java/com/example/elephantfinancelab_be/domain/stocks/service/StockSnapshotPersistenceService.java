@@ -34,6 +34,7 @@ public class StockSnapshotPersistenceService {
 
   private static final Duration DAILY_PRICE_MAX_AGE = Duration.ofMinutes(5);
   private static final Duration INFO_PRICE_MAX_AGE = Duration.ofMinutes(5);
+  private static final Duration ONE_DAY_CHART_MAX_AGE = Duration.ofSeconds(30);
   private static final Duration FINANCIAL_MAX_AGE = Duration.ofHours(24);
 
   private final StockDailyPriceSnapshotRepository stockDailyPriceSnapshotRepository;
@@ -187,7 +188,7 @@ public class StockSnapshotPersistenceService {
 
   private Duration chartMaxAge(StockChartRange range) {
     return switch (range) {
-      case ONE_DAY -> Duration.ZERO;
+      case ONE_DAY -> ONE_DAY_CHART_MAX_AGE;
       case ONE_WEEK -> Duration.ofMinutes(5);
       case THREE_MONTHS -> Duration.ofHours(1);
       case ONE_YEAR -> Duration.ofHours(6);

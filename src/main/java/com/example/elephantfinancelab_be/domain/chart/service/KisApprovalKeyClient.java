@@ -41,6 +41,9 @@ public class KisApprovalKeyClient {
     }
 
     String approvalKey = requestApprovalKey();
+    if (!hasText(approvalKey)) {
+      throw new ChartException(ChartErrorCode.KIS_APPROVAL_KEY_FAILED);
+    }
     cachedApprovalKey = new CachedApprovalKey(approvalKey, now.plus(APPROVAL_KEY_REUSE_DURATION));
     return approvalKey;
   }
@@ -69,7 +72,7 @@ public class KisApprovalKeyClient {
 
       JsonNode root = objectMapper.readTree(response.body());
       String approvalKey = root.path("approval_key").asText();
-      if (approvalKey == null || approvalKey.isBlank()) {
+      if (!hasText(approvalKey)) {
         throw new ChartException(ChartErrorCode.KIS_APPROVAL_KEY_FAILED);
       }
 
@@ -99,6 +102,10 @@ public class KisApprovalKeyClient {
             kisProperties.getAppKey(),
             "secretkey",
             kisProperties.getAppSecret()));
+  }
+
+  private boolean hasText(String value) {
+    return value != null && !value.isBlank();
   }
 
   private record CachedApprovalKey(String value, Instant expiresAt) {}

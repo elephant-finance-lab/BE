@@ -16,12 +16,17 @@ public class MarketIndexPushService {
   private final SimpMessagingTemplate messagingTemplate;
 
   public void push(MarketIndexResDTO.MarketIndex index) {
+    if (index == null) {
+      log.warn("시장 지수 STOMP push 생략. reason=null-index, destination={}", DESTINATION);
+      return;
+    }
+
+    String market = index.market();
     try {
       messagingTemplate.convertAndSend(DESTINATION, index);
-      log.debug("시장 지수 실시간 push 완료. market={}", index.market());
+      log.debug("시장 지수 실시간 push 완료. market={}", market);
     } catch (RuntimeException exception) {
-      log.warn(
-          "시장 지수 STOMP push 실패. market={}, destination={}", index.market(), DESTINATION, exception);
+      log.warn("시장 지수 STOMP push 실패. market={}, destination={}", market, DESTINATION, exception);
     }
   }
 }

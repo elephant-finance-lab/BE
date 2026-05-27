@@ -144,6 +144,11 @@ public class AiServerClient {
 
   public GetRecommendationsResponse getRecommendations(
       String bundleId, Integer topK, boolean includeDiagnostics) {
+    if (topK != null && topK <= 0) {
+      log.warn("[AI Client] 추천 조회 요청 실패: topK must be positive. topK={}", topK);
+      throw new AiServerException(AiServerErrorCode.AI400_01);
+    }
+
     try {
       GetRecommendationsRequest.Builder request =
           GetRecommendationsRequest.newBuilder()
