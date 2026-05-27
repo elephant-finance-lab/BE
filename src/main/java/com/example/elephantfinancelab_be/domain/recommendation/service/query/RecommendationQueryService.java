@@ -5,6 +5,8 @@ import com.example.elephantfinancelab_be.domain.recommendation.dto.res.Recommend
 public interface RecommendationQueryService {
   RecommendationResDTO.RecommendationListDTO findRecommendationList();
 
+  RecommendationResDTO.RecommendationDetailDTO findRecommendationDetail(Long recommendationId);
+
   RecommendationResDTO.RecommendationDetailDTO findRecommendationDetail(String stockCode);
 
   Long findUserIdByEmail(String email);

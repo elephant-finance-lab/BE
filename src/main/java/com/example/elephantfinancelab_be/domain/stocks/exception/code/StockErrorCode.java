@@ -34,6 +34,18 @@ public enum StockErrorCode implements BaseErrorCode {
       HttpStatus.INTERNAL_SERVER_ERROR, "STOCK500_9", "종목 재무제표 캐시 저장에 실패했습니다."),
   STOCK_FINANCIAL_CACHE_DESERIALIZE_FAILED(
       HttpStatus.INTERNAL_SERVER_ERROR, "STOCK500_10", "종목 재무제표 캐시 조회에 실패했습니다."),
+  STOCK_DAILY_PRICE_CACHE_SERIALIZE_FAILED(
+      HttpStatus.INTERNAL_SERVER_ERROR, "STOCK500_11", "종목 일별 시세 캐시 저장에 실패했습니다."),
+  STOCK_DAILY_PRICE_CACHE_DESERIALIZE_FAILED(
+      HttpStatus.INTERNAL_SERVER_ERROR, "STOCK500_12", "종목 일별 시세 캐시 조회에 실패했습니다."),
+  STOCK_SNAPSHOT_SERIALIZE_FAILED(
+      HttpStatus.INTERNAL_SERVER_ERROR, "STOCK500_13", "종목 snapshot 저장 데이터 생성에 실패했습니다."),
+  STOCK_SNAPSHOT_DESERIALIZE_FAILED(
+      HttpStatus.INTERNAL_SERVER_ERROR, "STOCK500_14", "종목 snapshot 데이터 조회에 실패했습니다."),
+  STOCK_INFO_PRICE_CACHE_SERIALIZE_FAILED(
+      HttpStatus.INTERNAL_SERVER_ERROR, "STOCK500_15", "종목 시세 정보 캐시 저장에 실패했습니다."),
+  STOCK_INFO_PRICE_CACHE_DESERIALIZE_FAILED(
+      HttpStatus.INTERNAL_SERVER_ERROR, "STOCK500_16", "종목 시세 정보 캐시 조회에 실패했습니다."),
   KIS_STOCK_PRICE_API_FAILED(HttpStatus.BAD_GATEWAY, "STOCK502_1", "한국투자증권 현재가 조회에 실패했습니다."),
   KIS_STOCK_PRICE_WEBSOCKET_FAILED(
       HttpStatus.BAD_GATEWAY, "STOCK502_2", "한국투자증권 실시간 체결가 구독에 실패했습니다."),
@@ -51,6 +63,10 @@ public enum StockErrorCode implements BaseErrorCode {
   KIS_STOCK_FINANCIAL_API_FAILED(HttpStatus.BAD_GATEWAY, "STOCK502_9", "한국투자증권 재무제표 조회에 실패했습니다."),
   KIS_STOCK_FINANCIAL_RESPONSE_PARSE_FAILED(
       HttpStatus.BAD_GATEWAY, "STOCK502_10", "한국투자증권 재무제표 응답 파싱에 실패했습니다."),
+  KIS_STOCK_BASIC_INFO_API_FAILED(
+      HttpStatus.BAD_GATEWAY, "STOCK502_11", "한국투자증권 종목 기본정보 조회에 실패했습니다."),
+  KIS_STOCK_BASIC_INFO_RESPONSE_PARSE_FAILED(
+      HttpStatus.BAD_GATEWAY, "STOCK502_12", "한국투자증권 종목 기본정보 응답 파싱에 실패했습니다."),
   ;
 
   private final HttpStatus status;

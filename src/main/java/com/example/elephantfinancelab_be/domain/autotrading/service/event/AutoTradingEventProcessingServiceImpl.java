@@ -67,15 +67,14 @@ public class AutoTradingEventProcessingServiceImpl implements AutoTradingEventPr
     }
 
     AutoTradingSession session = matchedSession.get();
-    boolean stoppedAfterRequest =
-        (message.eventType() == AutoTradingEventType.AUTO_TRADING_FAILED
-                && session.getStatus() == AutoTradingSessionStatus.STOPPING)
-            || (message.eventType() == AutoTradingEventType.AUTO_TRADING_STOPPED
-                && "USER_REQUESTED"
-                    .equalsIgnoreCase(payloadText(message.payload(), "stop_reason", "stopReason")));
+    boolean stoppedAfterRequest = stoppedAfterRequest(session, message);
+    boolean failedTerminalStop =
+        message.eventType() == AutoTradingEventType.AUTO_TRADING_STOPPED
+            && isFailedStatus(payloadText(message.payload(), "terminal_status", "terminalStatus"));
     applySessionStatus(session, message);
     NotificationResDTO.Item notification =
-        createNotification(session, event, execution, message, stoppedAfterRequest);
+        createNotification(
+            session, event, execution, message, stoppedAfterRequest, failedTerminalStop);
     return Optional.of(new NotificationDispatch(session.getUserId(), notification));
   }
 
@@ -105,6 +104,19 @@ public class AutoTradingEventProcessingServiceImpl implements AutoTradingEventPr
           .filter(item -> item.getStatus() == AutoTradingSessionStatus.STARTING);
     }
     return Optional.empty();
+  }
+
+  private boolean stoppedAfterRequest(AutoTradingSession session, AutoTradingKafkaEvent message) {
+    if (message.eventType() == AutoTradingEventType.AUTO_TRADING_FAILED) {
+      return session.getStatus() == AutoTradingSessionStatus.STOPPING;
+    }
+    if (message.eventType() != AutoTradingEventType.AUTO_TRADING_STOPPED) {
+      return false;
+    }
+
+    String stopReason = payloadText(message.payload(), "stop_reason", "stopReason");
+    return "USER_REQUESTED".equalsIgnoreCase(stopReason)
+        || (stopReason == null && session.getStatus() == AutoTradingSessionStatus.STOPPING);
   }
 
   private Optional<AutoTradingSession> findByAiSessionId(String value) {
@@ -192,7 +204,15 @@ public class AutoTradingEventProcessingServiceImpl implements AutoTradingEventPr
         sessionRepository.saveAndFlush(session);
       }
       case AUTO_TRADING_STOPPED -> {
-        session.markStopped(statusMessage);
+        String terminalStatus = payloadText(message.payload(), "terminal_status", "terminalStatus");
+        String stopReason = payloadText(message.payload(), "stop_reason", "stopReason");
+        if (isFailedStatus(terminalStatus)) {
+          session.markFailed(statusMessage);
+        } else if ("COMPLETED".equalsIgnoreCase(stopReason)) {
+          session.markCompleted(statusMessage);
+        } else {
+          session.markStopped(statusMessage);
+        }
         sessionRepository.saveAndFlush(session);
       }
       case AUTO_TRADING_FAILED -> {
@@ -215,8 +235,10 @@ public class AutoTradingEventProcessingServiceImpl implements AutoTradingEventPr
       AutoTradingEvent event,
       AutoTradingExecution execution,
       AutoTradingKafkaEvent message,
-      boolean stoppedAfterRequest) {
-    NotificationContent content = notificationContent(message, stoppedAfterRequest);
+      boolean stoppedAfterRequest,
+      boolean failedTerminalStop) {
+    NotificationContent content =
+        notificationContent(message, stoppedAfterRequest, failedTerminalStop);
     NotificationReferenceType referenceType =
         execution == null
             ? referenceType(message.eventType())
@@ -235,10 +257,14 @@ public class AutoTradingEventProcessingServiceImpl implements AutoTradingEventPr
   }
 
   private NotificationContent notificationContent(
-      AutoTradingKafkaEvent event, boolean stoppedAfterRequest) {
+      AutoTradingKafkaEvent event, boolean stoppedAfterRequest, boolean failedTerminalStop) {
     if (stoppedAfterRequest) {
       return new NotificationContent(
           NotificationType.AUTO_TRADING, "자동매매 종료", "AI 모의 자동매매가 중지 요청 이후 종료되었습니다.");
+    }
+    if (failedTerminalStop) {
+      return new NotificationContent(
+          NotificationType.AUTO_TRADING, "자동매매 오류", "AI 모의 자동매매가 오류로 중단되었습니다.");
     }
     String orderDescription = orderDescription(event.payload());
     return switch (event.eventType()) {
@@ -381,6 +407,10 @@ public class AutoTradingEventProcessingServiceImpl implements AutoTradingEventPr
   private static Boolean payloadBoolean(JsonNode payload, String... fields) {
     JsonNode value = value(payload, fields);
     return value == null ? null : value.asBoolean();
+  }
+
+  private static boolean isFailedStatus(String status) {
+    return "FAIL".equalsIgnoreCase(status) || "FAILED".equalsIgnoreCase(status);
   }
 
   private static JsonNode value(JsonNode payload, String... fields) {

@@ -1,6 +1,4 @@
 app:
-  seed:
-    enabled: true
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   oauth2:
@@ -98,11 +96,13 @@ springdoc:
     operations-sorter: alpha
 
 kis:
-  app-key: ${KIS_APP_KEY}
-  app-secret: ${KIS_APP_SECRET}
+  mode: real
+  app-key: ${KIS_FINANCIAL_APP_KEY:}
+  app-secret: ${KIS_FINANCIAL_APP_SECRET:}
   base-url: ${KIS_BASE_URL:https://openapi.koreainvestment.com:9443}
-  financial-app-key: ${KIS_FINANCIAL_APP_KEY}
-  financial-app-secret: ${KIS_FINANCIAL_APP_SECRET}
+  financial-app-key: ${KIS_FINANCIAL_APP_KEY:}
+  financial-app-secret: ${KIS_FINANCIAL_APP_SECRET:}
+  financial-base-url: ${KIS_FINANCIAL_BASE_URL:https://openapi.koreainvestment.com:9443}
   websocket-url: ${KIS_WS_URL:ws://ops.koreainvestment.com:21000}
 
 logging:
@@ -118,6 +118,10 @@ ai:
   paper-auto:
     bundle-id: ${AI_PAPER_BUNDLE_ID:}
     confirm-phrase: ${AI_PAPER_CONFIRM_PHRASE:PAPER_AUTO_OK}
+  recommendations:
+    bundle-id: ${AI_RECOMMENDATION_BUNDLE_ID:}
+    top-k: ${AI_RECOMMENDATION_TOP_K:10}
+    include-diagnostics: ${AI_RECOMMENDATION_INCLUDE_DIAGNOSTICS:false}
 
 auto-trading:
   kafka:

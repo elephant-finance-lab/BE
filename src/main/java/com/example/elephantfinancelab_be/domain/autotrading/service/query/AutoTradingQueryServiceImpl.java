@@ -42,17 +42,40 @@ public class AutoTradingQueryServiceImpl implements AutoTradingQueryService {
 
     if (matchesSession) {
       String message = "AI status: " + response.getStatus();
-      if (!response.getRunning() && session.getStatus() == AutoTradingSessionStatus.STOPPING) {
-        session.markStopped(message);
-      } else if (!response.getRunning()
-          && session.getStatus() == AutoTradingSessionStatus.RUNNING) {
-        session.markCompleted(message);
+      if (!response.getRunning()) {
+        reconcileTerminalStatus(session, response, message);
       } else {
         session.updateAiStatusMessage(message);
       }
       session = autoTradingSessionRepository.saveAndFlush(session);
+    } else if (isMissingAiSession(response) && !session.isTerminal()) {
+      session.markStopped("AI status: IDLE (AI 서버에 실행 세션이 없습니다.)");
+      session = autoTradingSessionRepository.saveAndFlush(session);
     }
     return AutoTradingConverter.toAiStatus(session, response, matchesSession);
+  }
+
+  private static void reconcileTerminalStatus(
+      AutoTradingSession session, PaperAutoTradingStatusResponse response, String message) {
+    if (isFailedStatus(response.getTerminalStatus())) {
+      session.markFailed(message + ": " + response.getTerminalStatus());
+    } else if (session.getStatus() == AutoTradingSessionStatus.STOPPING
+        || "USER_REQUESTED".equalsIgnoreCase(response.getStopReason())
+        || "STOPPED".equalsIgnoreCase(response.getTerminalStatus())) {
+      session.markStopped(message);
+    } else if (!session.isTerminal()) {
+      session.markCompleted(message);
+    }
+  }
+
+  private static boolean isMissingAiSession(PaperAutoTradingStatusResponse response) {
+    return !response.getRunning()
+        && response.getSessionId().isBlank()
+        && "IDLE".equalsIgnoreCase(response.getStatus());
+  }
+
+  private static boolean isFailedStatus(String status) {
+    return "FAIL".equalsIgnoreCase(status) || "FAILED".equalsIgnoreCase(status);
   }
 
   private AutoTradingSession getSession(Long userId, String sessionId) {

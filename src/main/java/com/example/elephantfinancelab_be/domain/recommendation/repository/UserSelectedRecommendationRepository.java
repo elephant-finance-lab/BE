@@ -8,8 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface UserSelectedRecommendationRepository
     extends JpaRepository<UserSelectedRecommendation, Long> {
-  boolean existsByUserId(Long userId);
-
   @EntityGraph(attributePaths = "recommendation")
   List<UserSelectedRecommendation> findAllByUserIdAndRecommendation_IdIn(
       Long userId, Collection<Long> recommendationIds);

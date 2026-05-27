@@ -9,7 +9,11 @@ import org.springframework.http.HttpStatus;
 @AllArgsConstructor
 public enum RecommendationErrorCode implements BaseErrorCode {
   NO_SELECTED_RECOMMENDATION(HttpStatus.BAD_REQUEST, "RECOMMENDATION400_01", "선택한 추천 종목이 없습니다."),
-  NO_PRIOR_SELECTION(HttpStatus.CONFLICT, "RECOMMENDATION409_02", "선택된 추천 종목 정보가 없습니다.");
+  INVALID_RECOMMENDATION_SELECTION(
+      HttpStatus.BAD_REQUEST, "RECOMMENDATION400_02", "추천 종목 선택 요청이 올바르지 않습니다."),
+  RECOMMENDATION_NOT_FOUND(HttpStatus.NOT_FOUND, "RECOMMENDATION404_01", "추천 종목을 찾을 수 없습니다."),
+  MODEL_RECOMMENDATION_UNAVAILABLE(
+      HttpStatus.SERVICE_UNAVAILABLE, "RECOMMENDATION503_01", "AI 모델 추천 결과를 사용할 수 없습니다.");
 
   private final HttpStatus status;
   private final String code;

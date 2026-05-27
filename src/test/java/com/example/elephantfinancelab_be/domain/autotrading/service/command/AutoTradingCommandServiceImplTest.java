@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.elephant.ai.v1.StartPaperAutoTradingResponse;
+import com.elephant.ai.v1.StopPaperAutoTradingResponse;
 import com.example.elephantfinancelab_be.domain.autotrading.dto.req.AutoTradingReqDTO;
 import com.example.elephantfinancelab_be.domain.autotrading.dto.res.AutoTradingResDTO;
 import com.example.elephantfinancelab_be.domain.autotrading.entity.AutoTradingSession;
@@ -134,6 +135,32 @@ class AutoTradingCommandServiceImplTest {
 
     verify(aiServerClient, never())
         .startPaperAutoTrading(anyString(), anyString(), any(), any(), any(), anyString());
+  }
+
+  @Test
+  void treatsAiNotRunningStopResponseAsAlreadyStopped() {
+    AutoTradingSession session =
+        AutoTradingSession.builder()
+            .sessionId("be-session-stale")
+            .userId(1L)
+            .status(AutoTradingSessionStatus.RUNNING)
+            .aiSessionId("ai-session-stale")
+            .build();
+    when(sessionRepository.findBySessionIdAndUserId("be-session-stale", 1L))
+        .thenReturn(Optional.of(session));
+    when(aiServerClient.stopPaperAutoTrading(anyString(), anyString()))
+        .thenReturn(
+            StopPaperAutoTradingResponse.newBuilder()
+                .setAccepted(false)
+                .setStatus("NOT_RUNNING")
+                .setReason("실행 중인 세션 없음")
+                .build());
+
+    AutoTradingResDTO.Session result = service.stopSession(1L, "be-session-stale");
+
+    assertThat(result.getStatus()).isEqualTo(AutoTradingSessionStatus.STOPPED);
+    assertThat(result.getAiStatusMessage()).contains("NOT_RUNNING");
+    verify(sessionRepository, times(2)).saveAndFlush(session);
   }
 
   private static AutoTradingReqDTO.StartSession request() {

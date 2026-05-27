@@ -11,10 +11,13 @@ public class StockInfoResDTO {
   public record Price(
       Long dayLowPriceKrw,
       Long dayHighPriceKrw,
-      Long yearLowPriceKrw,
-      Long yearHighPriceKrw,
+      Long week52LowPriceKrw,
+      Long week52HighPriceKrw,
       Long openPriceKrw,
-      Long closePriceKrw) {}
+      Long currentPriceKrw,
+      Long volume,
+      Long tradingValueKrw,
+      String asOfDate) {}
 
   public record FinancialSummary(
       StockFinancialPeriod period, String unit, List<String> columns, List<Row> rows) {}

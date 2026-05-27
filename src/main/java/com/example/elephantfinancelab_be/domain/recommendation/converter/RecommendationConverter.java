@@ -10,9 +10,24 @@ import lombok.NoArgsConstructor;
 public final class RecommendationConverter {
 
   public static RecommendationResDTO.RecommendationListDTO toRecommendationListDTO(
-      String profile, List<RecommendationResDTO.RecommendationInfoDTO> infoList) {
+      String profile,
+      String modelStatus,
+      String modelReason,
+      String generatedAt,
+      String bundleId,
+      String modelVersion,
+      String asof,
+      String mode,
+      List<RecommendationResDTO.RecommendationInfoDTO> infoList) {
     return RecommendationResDTO.RecommendationListDTO.builder()
         .userProfileSummary(profile)
+        .modelStatus(modelStatus)
+        .modelReason(modelReason)
+        .generatedAt(generatedAt)
+        .bundleId(bundleId)
+        .modelVersion(modelVersion)
+        .asof(asof)
+        .mode(mode)
         .recommendations(infoList)
         .build();
   }
@@ -21,21 +36,24 @@ public final class RecommendationConverter {
       Recommendation entity) {
     return RecommendationResDTO.RecommendationInfoDTO.builder()
         .recommendationId(entity.getId())
+        .modelRecommendationId(entity.getModelRecommendationId())
         .rank(entity.getRanking())
         .tickerCode(entity.getTickerCode())
+        .stockCode(entity.getTickerCode())
         .companyName(entity.getCompanyName())
+        .stockName(entity.getCompanyName())
         .logoUrl(entity.getLogoUrl())
         .currentPrice(entity.getCurrentPrice())
         .changeRate(entity.getChangeRate())
         .currency(entity.getCurrency())
         .isSelected(false)
-        .reason(
-            entity.getRecommendReason() == null
-                ? ""
-                : entity.getRecommendReason().length() > 10
-                    ? entity.getRecommendReason().substring(0, 10) + "..."
-                    : entity.getRecommendReason())
+        .reason(entity.getRecommendReason())
         .score(entity.getScore())
+        .expectedReturn(entity.getExpectedReturn())
+        .expectedReturnAvailable(entity.getExpectedReturnAvailable())
+        .riskLevel(entity.getRiskLevel())
+        .modelVersion(entity.getModelVersion())
+        .bundleId(entity.getModelBundleId())
         .build();
   }
 
@@ -43,15 +61,30 @@ public final class RecommendationConverter {
       Recommendation entity, String profile) {
     return RecommendationResDTO.RecommendationDetailDTO.builder()
         .recommendationId(entity.getId())
+        .modelRecommendationId(entity.getModelRecommendationId())
         .tickerCode(entity.getTickerCode())
+        .stockCode(entity.getTickerCode())
         .companyName(entity.getCompanyName())
+        .stockName(entity.getCompanyName())
         .logoUrl(entity.getLogoUrl())
         .userProfileSummary(profile)
+        .recommendReason(entity.getRecommendReason())
+        .companySummary(entity.getCompanySummary())
+        .growthPoint(entity.getGrowthPoint())
+        .priceAttractiveness(entity.getPriceAttractiveness())
+        .risk(entity.getRisk())
         .currentPrice(entity.getCurrentPrice())
         .changeRate(entity.getChangeRate())
         .currency(entity.getCurrency())
         .rank(entity.getRanking())
         .score(entity.getScore())
+        .expectedReturn(entity.getExpectedReturn())
+        .expectedReturnAvailable(entity.getExpectedReturnAvailable())
+        .riskLevel(entity.getRiskLevel())
+        .modelVersion(entity.getModelVersion())
+        .bundleId(entity.getModelBundleId())
+        .modelGeneratedAt(entity.getModelGeneratedAt())
+        .modelAsof(entity.getModelAsof())
         .sections(
             RecommendationResDTO.DetailSectionsDTO.builder()
                 .recommendReason(entity.getRecommendReason())

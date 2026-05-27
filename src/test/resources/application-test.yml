@@ -37,6 +37,7 @@ jwt:
   refresh-expiration: 1209600000
 
 kis:
+  mode: real
   app-key: test-app-key
   app-secret: test-app-secret
   base-url: https://openapi.koreainvestment.com:9443
@@ -51,6 +52,10 @@ ai:
   paper-auto:
     bundle-id: BUNDLE-TEST
     confirm-phrase: PAPER_AUTO_OK
+  recommendations:
+    bundle-id: BUNDLE-TEST
+    top-k: 10
+    include-diagnostics: false
 
 auto-trading:
   kafka:
