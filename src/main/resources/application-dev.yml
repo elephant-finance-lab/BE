@@ -75,7 +75,7 @@ ai:
   server:
     host: ${AI_SERVER_HOST:localhost}
     port: ${AI_SERVER_PORT:50051}
-    timeout: ${AI_SERVER_TIMEOUT:5}
+    timeout: ${AI_SERVER_TIMEOUT:30}
   paper-auto:
     bundle-id: ${AI_PAPER_BUNDLE_ID:}
     confirm-phrase: ${AI_PAPER_CONFIRM_PHRASE:PAPER_AUTO_OK}

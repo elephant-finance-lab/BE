@@ -10,11 +10,15 @@ import com.elephant.ai.v1.GetRecommendationsResponse;
 import com.elephant.ai.v1.RecommendationItem;
 import com.example.elephantfinancelab_be.domain.recommendation.dto.res.RecommendationResDTO;
 import com.example.elephantfinancelab_be.domain.recommendation.entity.Recommendation;
+import com.example.elephantfinancelab_be.domain.recommendation.entity.UserSelectedRecommendation;
 import com.example.elephantfinancelab_be.domain.recommendation.exception.code.RecommendationErrorCode;
 import com.example.elephantfinancelab_be.domain.recommendation.repository.RecommendationRepository;
+import com.example.elephantfinancelab_be.domain.recommendation.repository.UserSelectedRecommendationRepository;
+import com.example.elephantfinancelab_be.domain.user.entity.User;
 import com.example.elephantfinancelab_be.domain.user.repository.UserRepository;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.GeneralException;
 import com.example.elephantfinancelab_be.global.config.AiServerClient;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,10 +28,13 @@ class RecommendationQueryServiceImplTest {
 
   private final RecommendationRepository recommendationRepository =
       mock(RecommendationRepository.class);
+  private final UserSelectedRecommendationRepository selectedRepository =
+      mock(UserSelectedRecommendationRepository.class);
   private final UserRepository userRepository = mock(UserRepository.class);
   private final AiServerClient aiServerClient = mock(AiServerClient.class);
   private final RecommendationQueryServiceImpl service =
-      new RecommendationQueryServiceImpl(recommendationRepository, userRepository, aiServerClient);
+      new RecommendationQueryServiceImpl(
+          recommendationRepository, selectedRepository, userRepository, aiServerClient);
 
   @BeforeEach
   void setUp() {
@@ -112,6 +119,45 @@ class RecommendationQueryServiceImplTest {
         .isInstanceOf(GeneralException.class)
         .extracting("code")
         .isEqualTo(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+  }
+
+  @Test
+  void marksAlreadySelectedRecommendationsForAuthenticatedUser() {
+    Recommendation recommendation =
+        Recommendation.builder().id(1L).tickerCode("005930").companyName("삼성전자").build();
+    RecommendationItem item =
+        RecommendationItem.newBuilder()
+            .setRecommendationId("MODEL-1")
+            .setStockCode("005930")
+            .setStockName("삼성전자")
+            .setRanking(1)
+            .setScore(0.92)
+            .setReason("MODEL_RANKING_SIGNAL")
+            .setRiskLevel("low")
+            .build();
+    GetRecommendationsResponse response =
+        GetRecommendationsResponse.newBuilder()
+            .setStatus("PASS")
+            .setReason("recommendations_ready")
+            .setBundleId("BUNDLE-TEST")
+            .addRecommendations(item)
+            .build();
+    User user = User.builder().id(7L).email("user@example.com").build();
+    UserSelectedRecommendation selected =
+        UserSelectedRecommendation.builder().userId(7L).recommendation(recommendation).build();
+    when(aiServerClient.getRecommendations("BUNDLE-TEST", 10, false)).thenReturn(response);
+    when(recommendationRepository.findByTickerCodeIgnoreCase("005930"))
+        .thenReturn(Optional.of(recommendation));
+    when(recommendationRepository.saveAll(org.mockito.ArgumentMatchers.anyList()))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(7L, List.of(1L)))
+        .thenReturn(List.of(selected));
+
+    RecommendationResDTO.RecommendationListDTO result =
+        service.findRecommendationList("user@example.com");
+
+    assertThat(result.getRecommendations().getFirst().getIsSelected()).isTrue();
   }
 
   @Test

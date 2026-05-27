@@ -26,6 +26,35 @@ class AutoTradingQueryServiceImplTest {
       new AutoTradingQueryServiceImpl(sessionRepository, aiServerClient);
 
   @Test
+  void returnsCurrentUsersActiveSession() {
+    AutoTradingSession session =
+        AutoTradingSession.builder()
+            .sessionId("be-session-active")
+            .userId(1L)
+            .status(AutoTradingSessionStatus.RUNNING)
+            .selectedTickers("005930")
+            .recommendationIds("1")
+            .build();
+    when(sessionRepository.findByUserIdAndActiveSlot(1L, "SHARED_KIS_VIRTUAL_ACCOUNT"))
+        .thenReturn(Optional.of(session));
+
+    AutoTradingResDTO.Session result = service.findActiveSession(1L);
+
+    assertThat(result.getSessionId()).isEqualTo("be-session-active");
+    assertThat(result.getStatus()).isEqualTo(AutoTradingSessionStatus.RUNNING);
+  }
+
+  @Test
+  void returnsNullWhenCurrentUserHasNoActiveSession() {
+    when(sessionRepository.findByUserIdAndActiveSlot(1L, "SHARED_KIS_VIRTUAL_ACCOUNT"))
+        .thenReturn(Optional.empty());
+
+    AutoTradingResDTO.Session result = service.findActiveSession(1L);
+
+    assertThat(result).isNull();
+  }
+
+  @Test
   void requestsAiStatusUsingStoredStartRequestId() {
     AutoTradingSession session =
         AutoTradingSession.builder()

@@ -30,9 +30,9 @@ public class RecommendationController {
   @Operation(summary = "추천 종목 목록 조회", description = "유저 맞춤형 추천 종목 리스트를 조회합니다.")
   @GetMapping("")
   public ResponseEntity<ApiResponse<RecommendationResDTO.RecommendationListDTO>>
-      getRecommendationList() {
+      getRecommendationList(@AuthenticationPrincipal String email) {
     RecommendationResDTO.RecommendationListDTO result =
-        recommendationQueryService.findRecommendationList();
+        recommendationQueryService.findRecommendationList(email);
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
         .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }

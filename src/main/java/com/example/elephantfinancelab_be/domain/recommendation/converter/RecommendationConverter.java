@@ -34,6 +34,11 @@ public final class RecommendationConverter {
 
   public static RecommendationResDTO.RecommendationInfoDTO toRecommendationInfoDTO(
       Recommendation entity) {
+    return toRecommendationInfoDTO(entity, false);
+  }
+
+  public static RecommendationResDTO.RecommendationInfoDTO toRecommendationInfoDTO(
+      Recommendation entity, boolean isSelected) {
     return RecommendationResDTO.RecommendationInfoDTO.builder()
         .recommendationId(entity.getId())
         .modelRecommendationId(entity.getModelRecommendationId())
@@ -46,7 +51,7 @@ public final class RecommendationConverter {
         .currentPrice(entity.getCurrentPrice())
         .changeRate(entity.getChangeRate())
         .currency(entity.getCurrency())
-        .isSelected(false)
+        .isSelected(isSelected)
         .reason(entity.getRecommendReason())
         .score(entity.getScore())
         .expectedReturn(entity.getExpectedReturn())

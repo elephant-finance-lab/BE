@@ -10,6 +10,8 @@ public interface AutoTradingSessionRepository extends JpaRepository<AutoTradingS
 
   Optional<AutoTradingSession> findBySessionIdAndUserId(String sessionId, Long userId);
 
+  Optional<AutoTradingSession> findByUserIdAndActiveSlot(Long userId, String activeSlot);
+
   Optional<AutoTradingSession> findFirstByAiSessionIdOrderByCreatedAtDesc(String aiSessionId);
 
   Optional<AutoTradingSession> findFirstByAiRequestIdOrderByCreatedAtDesc(String aiRequestId);

@@ -56,6 +56,16 @@ public class AutoTradingController {
         .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }
 
+  @Operation(summary = "실행 중인 자동매매 세션 조회", description = "로그인 사용자의 활성 paper-auto 세션을 조회합니다.")
+  @GetMapping("/active")
+  public ResponseEntity<ApiResponse<AutoTradingResDTO.Session>> getActiveSession(
+      @AuthenticationPrincipal String email) {
+    AutoTradingResDTO.Session result =
+        autoTradingQueryService.findActiveSession(resolveUserId(email));
+    return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
+        .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+  }
+
   @Operation(summary = "자동매매 세션 조회", description = "BE DB에 저장된 세션 상태를 조회합니다.")
   @GetMapping("/{sessionId}")
   public ResponseEntity<ApiResponse<AutoTradingResDTO.Session>> getSession(

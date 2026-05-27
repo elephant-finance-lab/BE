@@ -17,8 +17,19 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class AutoTradingQueryServiceImpl implements AutoTradingQueryService {
 
+  private static final String ACTIVE_SLOT = "SHARED_KIS_VIRTUAL_ACCOUNT";
+
   private final AutoTradingSessionRepository autoTradingSessionRepository;
   private final AiServerClient aiServerClient;
+
+  @Override
+  @Transactional(readOnly = true)
+  public AutoTradingResDTO.Session findActiveSession(Long userId) {
+    return autoTradingSessionRepository
+        .findByUserIdAndActiveSlot(userId, ACTIVE_SLOT)
+        .map(AutoTradingConverter::toSession)
+        .orElse(null);
+  }
 
   @Override
   @Transactional(readOnly = true)

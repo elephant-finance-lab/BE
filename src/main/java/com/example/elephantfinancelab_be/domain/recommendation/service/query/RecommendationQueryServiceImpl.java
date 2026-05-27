@@ -7,6 +7,7 @@ import com.example.elephantfinancelab_be.domain.recommendation.dto.res.Recommend
 import com.example.elephantfinancelab_be.domain.recommendation.entity.Recommendation;
 import com.example.elephantfinancelab_be.domain.recommendation.exception.code.RecommendationErrorCode;
 import com.example.elephantfinancelab_be.domain.recommendation.repository.RecommendationRepository;
+import com.example.elephantfinancelab_be.domain.recommendation.repository.UserSelectedRecommendationRepository;
 import com.example.elephantfinancelab_be.domain.user.entity.User;
 import com.example.elephantfinancelab_be.domain.user.exception.UserException;
 import com.example.elephantfinancelab_be.domain.user.exception.code.UserErrorCode;
@@ -18,6 +19,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,6 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class RecommendationQueryServiceImpl implements RecommendationQueryService {
 
   private final RecommendationRepository recommendationRepository;
+  private final UserSelectedRecommendationRepository userSelectedRecommendationRepository;
   private final UserRepository userRepository;
   private final AiServerClient aiServerClient;
 
@@ -45,7 +49,7 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
 
   @Override
   @Transactional
-  public RecommendationResDTO.RecommendationListDTO findRecommendationList() {
+  public RecommendationResDTO.RecommendationListDTO findRecommendationList(String email) {
     GetRecommendationsResponse response =
         aiServerClient.getRecommendations(
             recommendationBundleId, recommendationTopK, includeRecommendationDiagnostics);
@@ -62,9 +66,16 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
             .map(item -> upsertModelRecommendation(item, response))
             .toList();
     List<Recommendation> savedRecommendations = recommendationRepository.saveAll(recommendations);
+    Set<Long> selectedRecommendationIds =
+        findSelectedRecommendationIds(email, savedRecommendations);
     List<RecommendationResDTO.RecommendationInfoDTO> infoList =
         savedRecommendations.stream()
-            .map(RecommendationConverter::toRecommendationInfoDTO)
+            .map(
+                recommendation ->
+                    RecommendationConverter.toRecommendationInfoDTO(
+                        recommendation,
+                        recommendation.getId() != null
+                            && selectedRecommendationIds.contains(recommendation.getId())))
             .toList();
     return RecommendationConverter.toRecommendationListDTO(
         "사용자 맞춤 투자 추천 리스트",
@@ -106,6 +117,24 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
             .findByEmail(email)
             .orElseThrow(() -> new UserException(UserErrorCode.USER_NOT_FOUND));
     return user.getId();
+  }
+
+  private Set<Long> findSelectedRecommendationIds(
+      String email, List<Recommendation> recommendations) {
+    if (email == null || email.isBlank() || recommendations.isEmpty()) {
+      return Set.of();
+    }
+    List<Long> recommendationIds =
+        recommendations.stream().map(Recommendation::getId).filter(id -> id != null).toList();
+    if (recommendationIds.isEmpty()) {
+      return Set.of();
+    }
+    Long userId = findUserIdByEmail(email);
+    return userSelectedRecommendationRepository
+        .findAllByUserIdAndRecommendation_IdIn(userId, recommendationIds)
+        .stream()
+        .map(item -> item.getRecommendation().getId())
+        .collect(Collectors.toSet());
   }
 
   private Map<String, RecommendationItem> deduplicateByStockCode(
