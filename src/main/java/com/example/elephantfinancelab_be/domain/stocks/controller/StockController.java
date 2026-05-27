@@ -22,7 +22,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import reactor.core.publisher.Mono;
 
 @Tag(name = "Stocks", description = "종목 관련 API")
 @RestController
@@ -39,56 +38,54 @@ public class StockController {
   @Operation(summary = "종목 상세 상단 조회", description = "국내주식 종목명, 현재가, 전일 대비 정보를 조회합니다.")
   @GetMapping("/{ticker}/summary")
   public ResponseEntity<ApiResponse<StockResDTO.Summary>> getSummary(
-      @Parameter(description = "종목코드. 예: 005930") @PathVariable String ticker) {
+          @Parameter(description = "종목코드. 예: 005930") @PathVariable String ticker) {
     StockResDTO.Summary result = stockQueryService.getSummary(ticker);
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
-        .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+            .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }
 
+  // 변경사항: Mono<ResponseEntity> -> ResponseEntity, .block() 으로 동기 반환
   @Operation(summary = "종목 정보 탭 요약 조회", description = "시세 요약과 주요 재무 3개 항목을 한 번에 조회합니다.")
   @GetMapping("/{ticker}/info")
-  public Mono<ResponseEntity<ApiResponse<StockInfoResDTO.Info>>> getInfo(
-      @Parameter(description = "종목코드. 예: 005930") @PathVariable String ticker,
-      @Parameter(description = "QUARTER, YEAR. 기본값 QUARTER") @RequestParam(defaultValue = "QUARTER")
+  public ResponseEntity<ApiResponse<StockInfoResDTO.Info>> getInfo(
+          @Parameter(description = "종목코드. 예: 005930") @PathVariable String ticker,
+          @Parameter(description = "QUARTER, YEAR. 기본값 QUARTER") @RequestParam(defaultValue = "QUARTER")
           String period) {
-    return stockInfoQueryService
-        .getInfo(ticker, period)
-        .map(
-            result ->
-                ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
-                    .body(ApiResponse.of(GeneralSuccessCode.OK, result)));
+    StockInfoResDTO.Info result = stockInfoQueryService.getInfo(ticker, period).block();
+    return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
+            .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }
 
   @Operation(summary = "종목 차트 시계열 조회", description = "라인/캔들 차트 초기 데이터를 조회합니다.")
   @GetMapping("/{ticker}/chart")
   public ResponseEntity<ApiResponse<StockChartResDTO.Chart>> getChart(
-      @Parameter(description = "종목코드. 예: 005930") @PathVariable String ticker,
-      @Parameter(description = "1D, 1W, 3M, 1Y, 5Y, ALL") @RequestParam String range,
-      @Parameter(description = "LINE, CANDLE") @RequestParam String type) {
+          @Parameter(description = "종목코드. 예: 005930") @PathVariable String ticker,
+          @Parameter(description = "1D, 1W, 3M, 1Y, 5Y, ALL") @RequestParam String range,
+          @Parameter(description = "LINE, CANDLE") @RequestParam String type) {
     StockChartResDTO.Chart result = stockChartQueryService.getChart(ticker, range, type);
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
-        .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+            .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }
 
   @Operation(summary = "종목 일별 시세 조회", description = "국내주식 종목 상세 페이지의 일별 시세 표 데이터를 조회합니다.")
   @GetMapping("/{ticker}/daily")
   public ResponseEntity<ApiResponse<StockDailyPriceResDTO.DailyPrices>> getDailyPrices(
-      @Parameter(description = "종목코드. 예: 005930") @PathVariable String ticker) {
+          @Parameter(description = "종목코드. 예: 005930") @PathVariable String ticker) {
     StockDailyPriceResDTO.DailyPrices result = stockDailyPriceQueryService.getDailyPrices(ticker);
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
-        .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+            .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }
 
   @Operation(summary = "종목 재무제표 조회", description = "손익계산서, 재무상태표, 재무비율 표 데이터를 조회합니다.")
   @GetMapping("/{ticker}/financial")
   public ResponseEntity<ApiResponse<StockFinancialResDTO.Financial>> getFinancial(
-      @Parameter(description = "종목코드. 예: 005930") @PathVariable String ticker,
-      @Parameter(description = "INCOME, BALANCE, RATIO") @RequestParam String statement,
-      @Parameter(description = "QUARTER, YEAR. 기본값 QUARTER") @RequestParam(defaultValue = "QUARTER")
+          @Parameter(description = "종목코드. 예: 005930") @PathVariable String ticker,
+          @Parameter(description = "INCOME, BALANCE, RATIO") @RequestParam String statement,
+          @Parameter(description = "QUARTER, YEAR. 기본값 QUARTER") @RequestParam(defaultValue = "QUARTER")
           String period) {
     StockFinancialResDTO.Financial result =
-        stockFinancialQueryService.getFinancial(ticker, statement, period);
+            stockFinancialQueryService.getFinancial(ticker, statement, period);
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
-        .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+            .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }
 }
