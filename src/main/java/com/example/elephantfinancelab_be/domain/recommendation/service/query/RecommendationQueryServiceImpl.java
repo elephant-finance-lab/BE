@@ -12,6 +12,8 @@ import com.example.elephantfinancelab_be.domain.user.entity.User;
 import com.example.elephantfinancelab_be.domain.user.exception.UserException;
 import com.example.elephantfinancelab_be.domain.user.exception.code.UserErrorCode;
 import com.example.elephantfinancelab_be.domain.user.repository.UserRepository;
+import com.example.elephantfinancelab_be.global.apiPayload.code.AiServerErrorCode;
+import com.example.elephantfinancelab_be.global.apiPayload.exception.AiServerException;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.GeneralException;
 import com.example.elephantfinancelab_be.global.config.AiServerClient;
 import java.util.Comparator;
@@ -20,6 +22,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +35,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class RecommendationQueryServiceImpl implements RecommendationQueryService {
+
+  private static final String ANONYMOUS_USER = "anonymousUser";
 
   private final RecommendationRepository recommendationRepository;
   private final UserSelectedRecommendationRepository userSelectedRecommendationRepository;
@@ -50,9 +55,17 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
   @Override
   @Transactional
   public RecommendationResDTO.RecommendationListDTO findRecommendationList(String email) {
-    GetRecommendationsResponse response =
-        aiServerClient.getRecommendations(
-            recommendationBundleId, recommendationTopK, includeRecommendationDiagnostics);
+    GetRecommendationsResponse response;
+    try {
+      response =
+          aiServerClient.getRecommendations(
+              recommendationBundleId, recommendationTopK, includeRecommendationDiagnostics);
+    } catch (AiServerException e) {
+      if (isCacheFallbackEligible(e)) {
+        return findCachedRecommendationList(email, e);
+      }
+      throw e;
+    }
     if (!"PASS".equalsIgnoreCase(response.getStatus())) {
       log.warn(
           "[Recommendation] AI model response unavailable: status={}, reason={}",
@@ -121,7 +134,7 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
 
   private Set<Long> findSelectedRecommendationIds(
       String email, List<Recommendation> recommendations) {
-    if (email == null || email.isBlank() || recommendations.isEmpty()) {
+    if (isUnauthenticated(email) || recommendations.isEmpty()) {
       return Set.of();
     }
     List<Long> recommendationIds =
@@ -135,6 +148,62 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
         .stream()
         .map(item -> item.getRecommendation().getId())
         .collect(Collectors.toSet());
+  }
+
+  private RecommendationResDTO.RecommendationListDTO findCachedRecommendationList(
+      String email, AiServerException cause) {
+    List<Recommendation> cachedRecommendations =
+        recommendationRepository.findAllByOrderByRankingAsc().stream()
+            .limit(Math.max(recommendationTopK, 0))
+            .toList();
+    if (cachedRecommendations.isEmpty()) {
+      throw cause;
+    }
+
+    log.warn(
+        "[Recommendation] AI recommendation request failed with {}. Returning cached recommendations. count={}",
+        cause.getCode().getCode(),
+        cachedRecommendations.size());
+    Set<Long> selectedRecommendationIds =
+        findSelectedRecommendationIds(email, cachedRecommendations);
+    List<RecommendationResDTO.RecommendationInfoDTO> infoList =
+        cachedRecommendations.stream()
+            .map(
+                recommendation ->
+                    RecommendationConverter.toRecommendationInfoDTO(
+                        recommendation,
+                        recommendation.getId() != null
+                            && selectedRecommendationIds.contains(recommendation.getId())))
+            .toList();
+    return RecommendationConverter.toRecommendationListDTO(
+        "사용자 맞춤 투자 추천 리스트",
+        "FALLBACK",
+        cause.getCode().getMessage(),
+        firstNonBlank(cachedRecommendations, Recommendation::getModelGeneratedAt),
+        firstNonBlank(cachedRecommendations, Recommendation::getModelBundleId),
+        firstNonBlank(cachedRecommendations, Recommendation::getModelVersion),
+        firstNonBlank(cachedRecommendations, Recommendation::getModelAsof),
+        "cached",
+        infoList);
+  }
+
+  private static boolean isCacheFallbackEligible(AiServerException e) {
+    return e.getCode() == AiServerErrorCode.AI504_01
+        || e.getCode() == AiServerErrorCode.AI503_01
+        || e.getCode() == AiServerErrorCode.AI400_02;
+  }
+
+  private static boolean isUnauthenticated(String email) {
+    return email == null || email.isBlank() || ANONYMOUS_USER.equals(email);
+  }
+
+  private static String firstNonBlank(
+      List<Recommendation> recommendations, Function<Recommendation, String> extractor) {
+    return recommendations.stream()
+        .map(extractor)
+        .filter(value -> value != null && !value.isBlank())
+        .findFirst()
+        .orElse("");
   }
 
   private Map<String, RecommendationItem> deduplicateByStockCode(

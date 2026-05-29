@@ -3,6 +3,7 @@ package com.example.elephantfinancelab_be.domain.recommendation.service.query;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -16,6 +17,8 @@ import com.example.elephantfinancelab_be.domain.recommendation.repository.Recomm
 import com.example.elephantfinancelab_be.domain.recommendation.repository.UserSelectedRecommendationRepository;
 import com.example.elephantfinancelab_be.domain.user.entity.User;
 import com.example.elephantfinancelab_be.domain.user.repository.UserRepository;
+import com.example.elephantfinancelab_be.global.apiPayload.code.AiServerErrorCode;
+import com.example.elephantfinancelab_be.global.apiPayload.exception.AiServerException;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.GeneralException;
 import com.example.elephantfinancelab_be.global.config.AiServerClient;
 import java.util.List;
@@ -158,6 +161,68 @@ class RecommendationQueryServiceImplTest {
         service.findRecommendationList("user@example.com");
 
     assertThat(result.getRecommendations().getFirst().getIsSelected()).isTrue();
+  }
+
+  @Test
+  void treatsAnonymousUserPrincipalAsUnauthenticatedForRecommendationList() {
+    Recommendation recommendation =
+        Recommendation.builder().id(1L).tickerCode("005930").companyName("삼성전자").build();
+    RecommendationItem item =
+        RecommendationItem.newBuilder()
+            .setRecommendationId("MODEL-1")
+            .setStockCode("005930")
+            .setStockName("삼성전자")
+            .setRanking(1)
+            .setScore(0.92)
+            .setReason("MODEL_RANKING_SIGNAL")
+            .setRiskLevel("low")
+            .build();
+    GetRecommendationsResponse response =
+        GetRecommendationsResponse.newBuilder()
+            .setStatus("PASS")
+            .setReason("recommendations_ready")
+            .setBundleId("BUNDLE-TEST")
+            .addRecommendations(item)
+            .build();
+    when(aiServerClient.getRecommendations("BUNDLE-TEST", 10, false)).thenReturn(response);
+    when(recommendationRepository.findByTickerCodeIgnoreCase("005930"))
+        .thenReturn(Optional.of(recommendation));
+    when(recommendationRepository.saveAll(org.mockito.ArgumentMatchers.anyList()))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    RecommendationResDTO.RecommendationListDTO result =
+        service.findRecommendationList("anonymousUser");
+
+    assertThat(result.getRecommendations().getFirst().getIsSelected()).isFalse();
+    verify(userRepository, never()).findByEmail("anonymousUser");
+  }
+
+  @Test
+  void returnsCachedRecommendationsWhenAiRecommendationRequestTimesOut() {
+    Recommendation cached =
+        Recommendation.builder()
+            .id(1L)
+            .tickerCode("005930")
+            .companyName("삼성전자")
+            .ranking(1)
+            .modelBundleId("BUNDLE-CACHED")
+            .modelVersion("v1")
+            .modelGeneratedAt("2026-05-26T09:10:00+09:00")
+            .modelAsof("2026-05-26T09:09:00+09:00")
+            .build();
+    when(aiServerClient.getRecommendations("BUNDLE-TEST", 10, false))
+        .thenThrow(new AiServerException(AiServerErrorCode.AI504_01));
+    when(recommendationRepository.findAllByOrderByRankingAsc()).thenReturn(List.of(cached));
+
+    RecommendationResDTO.RecommendationListDTO result =
+        service.findRecommendationList("anonymousUser");
+
+    assertThat(result.getModelStatus()).isEqualTo("FALLBACK");
+    assertThat(result.getModelReason()).isEqualTo("AI 서버 응답 시간이 초과되었습니다.");
+    assertThat(result.getBundleId()).isEqualTo("BUNDLE-CACHED");
+    assertThat(result.getRecommendations())
+        .extracting(RecommendationResDTO.RecommendationInfoDTO::getStockCode)
+        .containsExactly("005930");
   }
 
   @Test
