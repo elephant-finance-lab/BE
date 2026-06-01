@@ -9,14 +9,14 @@ import com.example.elephantfinancelab_be.domain.portfolio.exception.code.Portfol
 import com.example.elephantfinancelab_be.domain.portfolio.repository.HoldingAiDetailRepository;
 import com.example.elephantfinancelab_be.domain.portfolio.repository.PositionRepository;
 import com.example.elephantfinancelab_be.domain.portfolio.service.KisPortfolioClient;
-import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.Collections;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.time.LocalDate;
+import java.time.ZoneId;
 
 @Service
 @RequiredArgsConstructor
@@ -49,7 +49,8 @@ public class PortfolioQueryServiceImpl implements PortfolioQueryService {
           .positions(Collections.emptyList())
           .build();
     }
-    return PortfolioConverter.toPositionPage(slice(details, pageable), pageable, details.size());
+    return PortfolioConverter.toPositionPage(
+        slice(details, pageable), pageable, details.size());
   }
 
   @Override

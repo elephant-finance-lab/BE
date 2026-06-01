@@ -41,8 +41,7 @@ public final class PortfolioConverter {
         .build();
   }
 
-  public static PortfolioResDTO.PositionDetail toPositionDetail(
-      KisPortfolioClient.Holding holding) {
+  public static PortfolioResDTO.PositionDetail toPositionDetail(KisPortfolioClient.Holding holding) {
     return PortfolioResDTO.PositionDetail.builder()
         .positionId(null)
         .tickerCode(holding.stockCode())
@@ -157,8 +156,7 @@ public final class PortfolioConverter {
         pageable.getPageSize() == 0
             ? 0
             : (int) Math.ceil((double) totalElements / pageable.getPageSize());
-    boolean hasNext =
-        (long) (pageable.getPageNumber() + 1) * pageable.getPageSize() < totalElements;
+    boolean hasNext = (long) (pageable.getPageNumber() + 1) * pageable.getPageSize() < totalElements;
     return PortfolioResDTO.PositionPage.builder()
         .page(pageable.getPageNumber())
         .size(pageable.getPageSize())

@@ -13,7 +13,8 @@ public enum PortfolioErrorCode implements BaseErrorCode {
   AI_DETAIL404_01(HttpStatus.NOT_FOUND, "AI_DETAIL404_01", "AI 상세 정보가 존재하지 않습니다."),
   KIS_ACCOUNT_CONFIG_MISSING(
       HttpStatus.BAD_REQUEST, "PORTFOLIO400_01", "KIS 계좌 환경변수가 설정되어 있지 않습니다."),
-  KIS_PORTFOLIO_API_FAILED(HttpStatus.BAD_GATEWAY, "PORTFOLIO502_01", "한국투자증권 포트폴리오 조회에 실패했습니다."),
+  KIS_PORTFOLIO_API_FAILED(
+      HttpStatus.BAD_GATEWAY, "PORTFOLIO502_01", "한국투자증권 포트폴리오 조회에 실패했습니다."),
   KIS_PORTFOLIO_RESPONSE_PARSE_FAILED(
       HttpStatus.BAD_GATEWAY, "PORTFOLIO502_02", "한국투자증권 포트폴리오 응답 파싱에 실패했습니다.");
 

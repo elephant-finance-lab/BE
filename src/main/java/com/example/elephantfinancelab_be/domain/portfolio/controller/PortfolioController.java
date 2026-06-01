@@ -61,15 +61,31 @@ public class PortfolioController {
         .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }
 
+  @Operation(summary = "보유 종목 목록 조회", description = "포트폴리오 화면용 보유 종목 목록을 조회합니다.")
+  @GetMapping("/holdings")
+  public ResponseEntity<ApiResponse<PortfolioResDTO.PositionPage>> getHoldings(
+      @AuthenticationPrincipal String email,
+      @RequestParam(defaultValue = "0") @Min(0) int page,
+      @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+    PortfolioResDTO.PositionPage result =
+        portfolioQueryService.findPositions(resolveUserId(email), PageRequest.of(page, size));
+    return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
+        .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+  }
+
   @Operation(summary = "거래 기록 조회", description = "사용자의 매수 및 매도 거래 기록을 조회합니다.")
   @GetMapping("/trades")
   public ResponseEntity<ApiResponse<PortfolioResDTO.TradePage>> getTrades(
       @AuthenticationPrincipal String email,
       @RequestParam(required = false) TradeType type,
+      @RequestParam(required = false) TradeType side,
+      @RequestParam(defaultValue = "1M") String period,
       @RequestParam(defaultValue = "0") @Min(0) int page,
       @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+    TradeType tradeType = side != null ? side : type;
     PortfolioResDTO.TradePage result =
-        portfolioQueryService.findTrades(resolveUserId(email), type, PageRequest.of(page, size));
+        portfolioQueryService.findTrades(
+            resolveUserId(email), tradeType, period, PageRequest.of(page, size));
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
         .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }

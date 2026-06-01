@@ -56,15 +56,19 @@ jwt:
   refresh-expiration: 1209600000
 
 kis:
-  mode: real
-  app-key: ${KIS_FINANCIAL_APP_KEY:}
-  app-secret: ${KIS_FINANCIAL_APP_SECRET:}
+  mode: ${KIS_MODE:real}
+  app-key: ${KIS_APP_KEY:${KIS_FINANCIAL_APP_KEY:}}
+  app-secret: ${KIS_APP_SECRET:${KIS_FINANCIAL_APP_SECRET:}}
   base-url: ${KIS_BASE_URL:}
-  financial-app-key: ${KIS_FINANCIAL_APP_KEY:}
-  financial-app-secret: ${KIS_FINANCIAL_APP_SECRET:}
+  financial-app-key: ${KIS_FINANCIAL_APP_KEY:${KIS_APP_KEY:}}
+  financial-app-secret: ${KIS_FINANCIAL_APP_SECRET:${KIS_APP_SECRET:}}
   financial-base-url: ${KIS_FINANCIAL_BASE_URL:}
   websocket-url: ${KIS_WS_URL:}
   websocket-enabled: ${KIS_WEBSOCKET_ENABLED:true}
+  account-number: ${KIS_ACCOUNT_NUMBER:}
+  account-product-code: ${KIS_ACCOUNT_PRODUCT_CODE:}
+  cano: ${KIS_CANO:}
+  acnt-prdt-cd: ${KIS_ACNT_PRDT_CD:}
 
 logging:
   level:
