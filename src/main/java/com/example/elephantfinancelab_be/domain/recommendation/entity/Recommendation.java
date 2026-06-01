@@ -1,6 +1,7 @@
 package com.example.elephantfinancelab_be.domain.recommendation.entity;
 
 import jakarta.persistence.*;
+import java.time.OffsetDateTime;
 import lombok.*;
 
 @Entity
@@ -44,8 +45,8 @@ public class Recommendation {
   @Column(name = "model_bundle_id", length = 120)
   private String modelBundleId;
 
-  @Column(name = "model_generated_at", length = 50)
-  private String modelGeneratedAt;
+  @Column(name = "model_generated_at", columnDefinition = "TIMESTAMP WITH TIME ZONE")
+  private OffsetDateTime modelGeneratedAt;
 
   @Column(name = "model_asof", length = 50)
   private String modelAsof;
@@ -76,7 +77,7 @@ public class Recommendation {
       String riskLevel,
       String modelVersion,
       String modelBundleId,
-      String modelGeneratedAt,
+      OffsetDateTime modelGeneratedAt,
       String modelAsof) {
     this.modelRecommendationId = modelRecommendationId;
     if (stockName != null && !stockName.isBlank()) {

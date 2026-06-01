@@ -11,6 +11,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +43,8 @@ public class RecommendationRefreshScheduler {
 
   @Value("${ai.recommendations.refresh.market-holidays:}")
   private String marketHolidays;
+
+  private ParsedMarketSchedule parsedMarketSchedule;
 
   @Autowired
   public RecommendationRefreshScheduler(RecommendationQueryService recommendationQueryService) {
@@ -93,8 +96,9 @@ public class RecommendationRefreshScheduler {
       return false;
     }
 
-    LocalTime open = parseMarketTime(marketOpen);
-    LocalTime close = parseMarketTime(marketClose);
+    ParsedMarketSchedule schedule = parsedMarketSchedule();
+    LocalTime open = schedule.open();
+    LocalTime close = schedule.close();
     if (open == null || close == null || close.isBefore(open)) {
       return false;
     }
@@ -103,7 +107,28 @@ public class RecommendationRefreshScheduler {
     return !time.isBefore(open) && !time.isAfter(close);
   }
 
+  private ParsedMarketSchedule parsedMarketSchedule() {
+    ParsedMarketSchedule cached = parsedMarketSchedule;
+    if (cached != null && cached.matches(marketOpen, marketClose, marketHolidays)) {
+      return cached;
+    }
+
+    ParsedMarketSchedule parsed =
+        new ParsedMarketSchedule(
+            marketOpen,
+            marketClose,
+            marketHolidays,
+            parseMarketTime(marketOpen),
+            parseMarketTime(marketClose),
+            parseMarketHolidays(marketHolidays));
+    parsedMarketSchedule = parsed;
+    return parsed;
+  }
+
   private LocalTime parseMarketTime(String raw) {
+    if (raw == null) {
+      return null;
+    }
     try {
       return LocalTime.parse(raw);
     } catch (DateTimeParseException e) {
@@ -113,14 +138,19 @@ public class RecommendationRefreshScheduler {
   }
 
   private boolean isMarketHoliday(LocalDate date) {
-    Set<LocalDate> holidays =
-        Arrays.stream(marketHolidays.split(","))
-            .map(String::trim)
-            .filter(value -> !value.isBlank())
-            .map(this::parseMarketHoliday)
-            .filter(java.util.Objects::nonNull)
-            .collect(Collectors.toSet());
-    return holidays.contains(date);
+    return parsedMarketSchedule().holidays().contains(date);
+  }
+
+  private Set<LocalDate> parseMarketHolidays(String raw) {
+    if (raw == null || raw.isBlank()) {
+      return Set.of();
+    }
+    return Arrays.stream(raw.split(","))
+        .map(String::trim)
+        .filter(value -> !value.isBlank())
+        .map(this::parseMarketHoliday)
+        .filter(Objects::nonNull)
+        .collect(Collectors.toSet());
   }
 
   private LocalDate parseMarketHoliday(String raw) {
@@ -129,6 +159,21 @@ public class RecommendationRefreshScheduler {
     } catch (DateTimeParseException e) {
       log.warn("[RecommendationRefresh] Invalid market holiday config: {}", raw);
       return null;
+    }
+  }
+
+  private record ParsedMarketSchedule(
+      String marketOpen,
+      String marketClose,
+      String marketHolidays,
+      LocalTime open,
+      LocalTime close,
+      Set<LocalDate> holidays) {
+
+    private boolean matches(String marketOpen, String marketClose, String marketHolidays) {
+      return Objects.equals(this.marketOpen, marketOpen)
+          && Objects.equals(this.marketClose, marketClose)
+          && Objects.equals(this.marketHolidays, marketHolidays);
     }
   }
 }

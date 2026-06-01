@@ -79,6 +79,22 @@ class RecommendationRefreshSchedulerTest {
   }
 
   @Test
+  void reparsesMarketConfigWhenSettingsChange() {
+    ReflectionTestUtils.setField(scheduler, "marketHoursOnly", true);
+    ReflectionTestUtils.setField(scheduler, "marketOpen", "10:30");
+    ReflectionTestUtils.setField(scheduler, "marketClose", "15:30");
+    ReflectionTestUtils.setField(scheduler, "marketHolidays", "2026-06-03");
+
+    assertThat(scheduler.shouldRefreshAt(LocalDateTime.of(2026, 6, 1, 10, 0))).isFalse();
+
+    ReflectionTestUtils.setField(scheduler, "marketOpen", "09:00");
+    ReflectionTestUtils.setField(scheduler, "marketHolidays", "2026-06-04");
+
+    assertThat(scheduler.shouldRefreshAt(LocalDateTime.of(2026, 6, 1, 10, 0))).isTrue();
+    assertThat(scheduler.shouldRefreshAt(LocalDateTime.of(2026, 6, 3, 10, 0))).isTrue();
+  }
+
+  @Test
   void swallowRefreshFailureSoSchedulerKeepsRunning() {
     ReflectionTestUtils.setField(scheduler, "refreshEnabled", true);
     ReflectionTestUtils.setField(scheduler, "marketHoursOnly", true);
