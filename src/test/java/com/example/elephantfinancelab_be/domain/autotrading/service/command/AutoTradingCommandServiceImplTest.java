@@ -10,6 +10,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.elephant.ai.v1.ServiceReadinessResponse;
 import com.elephant.ai.v1.StartPaperAutoTradingResponse;
 import com.elephant.ai.v1.StopPaperAutoTradingResponse;
 import com.example.elephantfinancelab_be.domain.autotrading.dto.req.AutoTradingReqDTO;
@@ -57,6 +58,7 @@ class AutoTradingCommandServiceImplTest {
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
     when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
         .thenReturn(List.of(selectedRecommendation(1L, "005930")));
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
     when(aiServerClient.startPaperAutoTrading(
             anyString(), anyString(), any(), any(), any(), anyString()))
         .thenReturn(
@@ -105,6 +107,7 @@ class AutoTradingCommandServiceImplTest {
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
     when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
         .thenReturn(List.of(selectedRecommendation(1L, "005930")));
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
     when(aiServerClient.startPaperAutoTrading(
             anyString(), anyString(), any(), any(), any(), anyString()))
         .thenThrow(new AiServerException(AiServerErrorCode.AI503_01));
@@ -117,6 +120,61 @@ class AutoTradingCommandServiceImplTest {
     verify(sessionRepository, times(2)).saveAndFlush(sessionCaptor.capture());
     assertThat(sessionCaptor.getAllValues().getLast().getStatus())
         .isEqualTo(AutoTradingSessionStatus.FAILED);
+  }
+
+  @Test
+  void blocksStartBeforeAiCallWhenReadinessDisallowsOrderActions() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
+        .thenReturn(Optional.empty());
+    when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+        .thenReturn(List.of(selectedRecommendation(1L, "005930")));
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST"))
+        .thenReturn(
+            ServiceReadinessResponse.newBuilder()
+                .setStatus("PASS")
+                .setSafeToEnableOrderActions(false)
+                .setLiveTradingAllowed(false)
+                .setSafeToEnableLiveActions(false)
+                .build());
+
+    assertThatThrownBy(() -> service.startSession(1L, "idempotency-1", request()))
+        .isInstanceOf(AutoTradingException.class)
+        .satisfies(
+            exception ->
+                assertThat(((AutoTradingException) exception).getCode())
+                    .isEqualTo(AutoTradingErrorCode.READINESS_GATE_BLOCKED));
+
+    verify(aiServerClient, never())
+        .startPaperAutoTrading(anyString(), anyString(), any(), any(), any(), anyString());
+    verify(sessionRepository, never()).saveAndFlush(any(AutoTradingSession.class));
+  }
+
+  @Test
+  void blocksPaperStartWhenReadinessIndicatesLiveActions() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
+        .thenReturn(Optional.empty());
+    when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+        .thenReturn(List.of(selectedRecommendation(1L, "005930")));
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST"))
+        .thenReturn(
+            ServiceReadinessResponse.newBuilder()
+                .setStatus("PASS")
+                .setSafeToEnableOrderActions(true)
+                .setLiveTradingAllowed(true)
+                .setSafeToEnableLiveActions(true)
+                .build());
+
+    assertThatThrownBy(() -> service.startSession(1L, "idempotency-1", request()))
+        .isInstanceOf(AutoTradingException.class)
+        .satisfies(
+            exception ->
+                assertThat(((AutoTradingException) exception).getCode())
+                    .isEqualTo(AutoTradingErrorCode.READINESS_GATE_BLOCKED));
+
+    verify(aiServerClient, never())
+        .startPaperAutoTrading(anyString(), anyString(), any(), any(), any(), anyString());
   }
 
   @Test
@@ -179,5 +237,14 @@ class AutoTradingCommandServiceImplTest {
   private static UserSelectedRecommendation selectedRecommendation(Long id, String ticker) {
     Recommendation recommendation = Recommendation.builder().id(id).tickerCode(ticker).build();
     return UserSelectedRecommendation.builder().userId(1L).recommendation(recommendation).build();
+  }
+
+  private static ServiceReadinessResponse paperReady() {
+    return ServiceReadinessResponse.newBuilder()
+        .setStatus("PASS")
+        .setSafeToEnableOrderActions(true)
+        .setLiveTradingAllowed(false)
+        .setSafeToEnableLiveActions(false)
+        .build();
   }
 }

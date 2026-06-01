@@ -1,5 +1,6 @@
 package com.example.elephantfinancelab_be.domain.autotrading.service.command;
 
+import com.elephant.ai.v1.ServiceReadinessResponse;
 import com.elephant.ai.v1.StartPaperAutoTradingResponse;
 import com.elephant.ai.v1.StopPaperAutoTradingResponse;
 import com.example.elephantfinancelab_be.domain.autotrading.converter.AutoTradingConverter;
@@ -62,6 +63,7 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     if (autoTradingSessionRepository.existsByActiveSlot(ACTIVE_SLOT)) {
       throw new AutoTradingException(AutoTradingErrorCode.ACTIVE_SESSION_EXISTS);
     }
+    requirePaperAutoReadiness();
 
     String aiRequestId = UUID.randomUUID().toString();
     AutoTradingSession session =
@@ -185,6 +187,17 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
         .map(String::trim)
         .distinct()
         .toList();
+  }
+
+  private void requirePaperAutoReadiness() {
+    ServiceReadinessResponse readiness = aiServerClient.getServiceReadiness(bundleId);
+    if (readiness == null
+        || !"PASS".equalsIgnoreCase(readiness.getStatus())
+        || !readiness.getSafeToEnableOrderActions()
+        || readiness.getLiveTradingAllowed()
+        || readiness.getSafeToEnableLiveActions()) {
+      throw new AutoTradingException(AutoTradingErrorCode.READINESS_GATE_BLOCKED);
+    }
   }
 
   private static String requireIdempotencyKey(String idempotencyKey) {

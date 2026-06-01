@@ -2,12 +2,23 @@ package com.example.elephantfinancelab_be.domain.recommendation.converter;
 
 import com.example.elephantfinancelab_be.domain.recommendation.dto.res.RecommendationResDTO;
 import com.example.elephantfinancelab_be.domain.recommendation.entity.Recommendation;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.time.temporal.ChronoField;
 import java.util.List;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class RecommendationConverter {
+
+  private static final DateTimeFormatter MODEL_GENERATED_AT_FORMATTER =
+      new DateTimeFormatterBuilder()
+          .appendPattern("yyyy-MM-dd'T'HH:mm:ss")
+          .appendFraction(ChronoField.NANO_OF_SECOND, 0, 9, true)
+          .appendOffsetId()
+          .toFormatter();
 
   public static RecommendationResDTO.RecommendationListDTO toRecommendationListDTO(
       String profile,
@@ -19,6 +30,34 @@ public final class RecommendationConverter {
       String asof,
       String mode,
       List<RecommendationResDTO.RecommendationInfoDTO> infoList) {
+    return toRecommendationListDTO(
+        profile,
+        modelStatus,
+        modelReason,
+        generatedAt,
+        bundleId,
+        modelVersion,
+        asof,
+        mode,
+        null,
+        false,
+        null,
+        infoList);
+  }
+
+  public static RecommendationResDTO.RecommendationListDTO toRecommendationListDTO(
+      String profile,
+      String modelStatus,
+      String modelReason,
+      String generatedAt,
+      String bundleId,
+      String modelVersion,
+      String asof,
+      String mode,
+      Long cacheAgeSec,
+      Boolean stale,
+      String staleReason,
+      List<RecommendationResDTO.RecommendationInfoDTO> infoList) {
     return RecommendationResDTO.RecommendationListDTO.builder()
         .userProfileSummary(profile)
         .modelStatus(modelStatus)
@@ -28,6 +67,12 @@ public final class RecommendationConverter {
         .modelVersion(modelVersion)
         .asof(asof)
         .mode(mode)
+        .cacheAgeSec(cacheAgeSec)
+        .stale(stale)
+        .staleReason(staleReason)
+        .advisoryOnly(true)
+        .safeToEnableOrderActions(false)
+        .liveTradingAllowed(false)
         .recommendations(infoList)
         .build();
   }
@@ -88,7 +133,7 @@ public final class RecommendationConverter {
         .riskLevel(entity.getRiskLevel())
         .modelVersion(entity.getModelVersion())
         .bundleId(entity.getModelBundleId())
-        .modelGeneratedAt(entity.getModelGeneratedAt())
+        .modelGeneratedAt(formatGeneratedAt(entity.getModelGeneratedAt()))
         .modelAsof(entity.getModelAsof())
         .sections(
             RecommendationResDTO.DetailSectionsDTO.builder()
@@ -99,5 +144,9 @@ public final class RecommendationConverter {
                 .risk(entity.getRisk())
                 .build())
         .build();
+  }
+
+  private static String formatGeneratedAt(OffsetDateTime generatedAt) {
+    return generatedAt == null ? null : MODEL_GENERATED_AT_FORMATTER.format(generatedAt);
   }
 }

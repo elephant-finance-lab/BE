@@ -12,17 +12,21 @@ import com.example.elephantfinancelab_be.domain.user.entity.User;
 import com.example.elephantfinancelab_be.domain.user.exception.UserException;
 import com.example.elephantfinancelab_be.domain.user.exception.code.UserErrorCode;
 import com.example.elephantfinancelab_be.domain.user.repository.UserRepository;
-import com.example.elephantfinancelab_be.global.apiPayload.code.AiServerErrorCode;
-import com.example.elephantfinancelab_be.global.apiPayload.exception.AiServerException;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.GeneralException;
 import com.example.elephantfinancelab_be.global.config.AiServerClient;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoField;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +42,13 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
 
   private static final String ANONYMOUS_USER = "anonymousUser";
 
+  private static final DateTimeFormatter MODEL_GENERATED_AT_FORMATTER =
+      new DateTimeFormatterBuilder()
+          .appendPattern("yyyy-MM-dd'T'HH:mm:ss")
+          .appendFraction(ChronoField.NANO_OF_SECOND, 0, 9, true)
+          .appendOffsetId()
+          .toFormatter();
+
   private final RecommendationRepository recommendationRepository;
   private final UserSelectedRecommendationRepository userSelectedRecommendationRepository;
   private final UserRepository userRepository;
@@ -52,20 +63,36 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
   @Value("${ai.recommendations.include-diagnostics:false}")
   private boolean includeRecommendationDiagnostics;
 
+  @Value("${ai.recommendations.cache-read-enabled:false}")
+  private boolean cacheReadEnabled;
+
+  @Value("${ai.recommendations.cache.max-age-seconds:180}")
+  private long cacheMaxAgeSeconds;
+
+  @Value("${ai.recommendations.cache.max-future-skew-seconds:5}")
+  private long cacheMaxFutureSkewSeconds;
+
+  private Clock clock = Clock.systemUTC();
+
   @Override
   @Transactional
   public RecommendationResDTO.RecommendationListDTO findRecommendationList(String email) {
-    GetRecommendationsResponse response;
-    try {
-      response =
-          aiServerClient.getRecommendations(
-              recommendationBundleId, recommendationTopK, includeRecommendationDiagnostics);
-    } catch (AiServerException e) {
-      if (isCacheFallbackEligible(e)) {
-        return findCachedRecommendationList(email, e);
-      }
-      throw e;
+    if (cacheReadEnabled) {
+      return findCachedRecommendationList(email);
     }
+    return refreshModelRecommendations(email);
+  }
+
+  @Override
+  @Transactional
+  public RecommendationResDTO.RecommendationListDTO refreshModelRecommendations() {
+    return refreshModelRecommendations(null);
+  }
+
+  private RecommendationResDTO.RecommendationListDTO refreshModelRecommendations(String email) {
+    GetRecommendationsResponse response =
+        aiServerClient.getRecommendations(
+            recommendationBundleId, recommendationTopK, includeRecommendationDiagnostics);
     if (!"PASS".equalsIgnoreCase(response.getStatus())) {
       log.warn(
           "[Recommendation] AI model response unavailable: status={}, reason={}",
@@ -74,9 +101,10 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
       throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
     }
 
+    OffsetDateTime modelGeneratedAt = parseGeneratedAt(response.getGeneratedAt());
     List<Recommendation> recommendations =
         deduplicateByStockCode(response).values().stream()
-            .map(item -> upsertModelRecommendation(item, response))
+            .map(item -> upsertModelRecommendation(item, response, modelGeneratedAt))
             .toList();
     List<Recommendation> savedRecommendations = recommendationRepository.saveAll(recommendations);
     Set<Long> selectedRecommendationIds =
@@ -94,11 +122,47 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
         "사용자 맞춤 투자 추천 리스트",
         response.getStatus(),
         response.getReason(),
-        response.getGeneratedAt(),
+        formatGeneratedAt(modelGeneratedAt),
         response.getBundleId(),
         response.getModelVersion(),
         response.getAsof(),
         response.getMode(),
+        infoList);
+  }
+
+  private RecommendationResDTO.RecommendationListDTO findCachedRecommendationList(String email) {
+    Recommendation latest = findLatestCachedRecommendation();
+    OffsetDateTime latestGeneratedAt = latest.getModelGeneratedAt();
+    long cacheAgeSec = cacheAgeSec(latestGeneratedAt);
+    if (cacheAgeSec > cacheMaxAgeSeconds) {
+      log.warn(
+          "[Recommendation] cached model recommendations stale: generatedAt={}, ageSec={}, maxAgeSec={}",
+          formatGeneratedAt(latestGeneratedAt),
+          cacheAgeSec,
+          cacheMaxAgeSeconds);
+      throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+    }
+    List<Recommendation> savedRecommendations =
+        recommendationRepository.findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            latestGeneratedAt, latest.getModelBundleId());
+    if (savedRecommendations.isEmpty()) {
+      log.warn("[Recommendation] cached model recommendations unavailable");
+      throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+    }
+    List<RecommendationResDTO.RecommendationInfoDTO> infoList =
+        toRecommendationInfoDTOs(email, savedRecommendations);
+    return RecommendationConverter.toRecommendationListDTO(
+        "사용자 맞춤 투자 추천 리스트",
+        "PASS",
+        "cached_recommendations",
+        formatGeneratedAt(latestGeneratedAt),
+        latest.getModelBundleId(),
+        latest.getModelVersion(),
+        latest.getModelAsof(),
+        "cached",
+        cacheAgeSec,
+        false,
+        null,
         infoList);
   }
 
@@ -132,6 +196,19 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
     return user.getId();
   }
 
+  private List<RecommendationResDTO.RecommendationInfoDTO> toRecommendationInfoDTOs(
+      String email, List<Recommendation> recommendations) {
+    Set<Long> selectedRecommendationIds = findSelectedRecommendationIds(email, recommendations);
+    return recommendations.stream()
+        .map(
+            recommendation ->
+                RecommendationConverter.toRecommendationInfoDTO(
+                    recommendation,
+                    recommendation.getId() != null
+                        && selectedRecommendationIds.contains(recommendation.getId())))
+        .toList();
+  }
+
   private Set<Long> findSelectedRecommendationIds(
       String email, List<Recommendation> recommendations) {
     if (isUnauthenticated(email) || recommendations.isEmpty()) {
@@ -150,60 +227,8 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
         .collect(Collectors.toSet());
   }
 
-  private RecommendationResDTO.RecommendationListDTO findCachedRecommendationList(
-      String email, AiServerException cause) {
-    List<Recommendation> cachedRecommendations =
-        recommendationRepository.findAllByOrderByRankingAsc().stream()
-            .limit(Math.max(recommendationTopK, 0))
-            .toList();
-    if (cachedRecommendations.isEmpty()) {
-      throw cause;
-    }
-
-    log.warn(
-        "[Recommendation] AI recommendation request failed with {}. Returning cached recommendations. count={}",
-        cause.getCode().getCode(),
-        cachedRecommendations.size());
-    Set<Long> selectedRecommendationIds =
-        findSelectedRecommendationIds(email, cachedRecommendations);
-    List<RecommendationResDTO.RecommendationInfoDTO> infoList =
-        cachedRecommendations.stream()
-            .map(
-                recommendation ->
-                    RecommendationConverter.toRecommendationInfoDTO(
-                        recommendation,
-                        recommendation.getId() != null
-                            && selectedRecommendationIds.contains(recommendation.getId())))
-            .toList();
-    return RecommendationConverter.toRecommendationListDTO(
-        "사용자 맞춤 투자 추천 리스트",
-        "FALLBACK",
-        cause.getCode().getMessage(),
-        firstNonBlank(cachedRecommendations, Recommendation::getModelGeneratedAt),
-        firstNonBlank(cachedRecommendations, Recommendation::getModelBundleId),
-        firstNonBlank(cachedRecommendations, Recommendation::getModelVersion),
-        firstNonBlank(cachedRecommendations, Recommendation::getModelAsof),
-        "cached",
-        infoList);
-  }
-
-  private static boolean isCacheFallbackEligible(AiServerException e) {
-    return e.getCode() == AiServerErrorCode.AI504_01
-        || e.getCode() == AiServerErrorCode.AI503_01
-        || e.getCode() == AiServerErrorCode.AI400_02;
-  }
-
   private static boolean isUnauthenticated(String email) {
     return email == null || email.isBlank() || ANONYMOUS_USER.equals(email);
-  }
-
-  private static String firstNonBlank(
-      List<Recommendation> recommendations, Function<Recommendation, String> extractor) {
-    return recommendations.stream()
-        .map(extractor)
-        .filter(value -> value != null && !value.isBlank())
-        .findFirst()
-        .orElse("");
   }
 
   private Map<String, RecommendationItem> deduplicateByStockCode(
@@ -220,7 +245,9 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
   }
 
   private Recommendation upsertModelRecommendation(
-      RecommendationItem item, GetRecommendationsResponse response) {
+      RecommendationItem item,
+      GetRecommendationsResponse response,
+      OffsetDateTime modelGeneratedAt) {
     String stockCode = normalizedStockCode(item);
     Recommendation recommendation =
         recommendationRepository
@@ -237,7 +264,7 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
         item.getRiskLevel(),
         item.getModelVersion().isBlank() ? response.getModelVersion() : item.getModelVersion(),
         item.getBundleId().isBlank() ? response.getBundleId() : item.getBundleId(),
-        response.getGeneratedAt(),
+        modelGeneratedAt,
         response.getAsof());
     return recommendation;
   }
@@ -249,5 +276,48 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
       throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
     }
     return stockCode.toUpperCase(Locale.ROOT);
+  }
+
+  private long cacheAgeSec(OffsetDateTime generated) {
+    if (generated == null) {
+      throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+    }
+    OffsetDateTime now = OffsetDateTime.now(clock);
+    if (generated.toInstant().isAfter(now.plusSeconds(cacheMaxFutureSkewSeconds).toInstant())) {
+      log.warn(
+          "[Recommendation] cached model recommendations have future generatedAt={}, maxFutureSkewSec={}",
+          formatGeneratedAt(generated),
+          cacheMaxFutureSkewSeconds);
+      throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+    }
+    long ageSec = Duration.between(generated, now).getSeconds();
+    return Math.max(0L, ageSec);
+  }
+
+  private Recommendation findLatestCachedRecommendation() {
+    return recommendationRepository.findByModelGeneratedAtIsNotNull().stream()
+        .sorted(
+            Comparator.comparing(
+                    (Recommendation recommendation) ->
+                        recommendation.getModelGeneratedAt().toInstant())
+                .reversed()
+                .thenComparing(
+                    Recommendation::getRanking, Comparator.nullsLast(Comparator.naturalOrder())))
+        .findFirst()
+        .orElseThrow(
+            () -> new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE));
+  }
+
+  private OffsetDateTime parseGeneratedAt(String generatedAt) {
+    try {
+      return OffsetDateTime.parse(generatedAt);
+    } catch (DateTimeParseException | NullPointerException e) {
+      log.warn("[Recommendation] AI model response has invalid generatedAt={}", generatedAt);
+      throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+    }
+  }
+
+  private String formatGeneratedAt(OffsetDateTime generatedAt) {
+    return generatedAt == null ? null : MODEL_GENERATED_AT_FORMATTER.format(generatedAt);
   }
 }

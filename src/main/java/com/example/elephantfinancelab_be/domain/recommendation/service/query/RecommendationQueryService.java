@@ -9,6 +9,8 @@ public interface RecommendationQueryService {
 
   RecommendationResDTO.RecommendationListDTO findRecommendationList(String email);
 
+  RecommendationResDTO.RecommendationListDTO refreshModelRecommendations();
+
   RecommendationResDTO.RecommendationDetailDTO findRecommendationDetail(Long recommendationId);
 
   RecommendationResDTO.RecommendationDetailDTO findRecommendationDetail(String stockCode);

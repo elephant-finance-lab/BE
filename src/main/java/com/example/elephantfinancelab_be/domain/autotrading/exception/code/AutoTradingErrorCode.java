@@ -17,6 +17,8 @@ public enum AutoTradingErrorCode implements BaseErrorCode {
       HttpStatus.CONFLICT, "AUTO_TRADING409_01", "공용 모의계좌에서 이미 실행 중인 자동매매 세션이 있습니다."),
   SESSION_NOT_STOPPABLE(HttpStatus.CONFLICT, "AUTO_TRADING409_02", "현재 상태에서는 자동매매 세션을 중지할 수 없습니다."),
   AI_REQUEST_ID_NOT_FOUND(HttpStatus.CONFLICT, "AUTO_TRADING409_03", "AI 상태 조회에 필요한 요청 ID가 없습니다."),
+  READINESS_GATE_BLOCKED(
+      HttpStatus.CONFLICT, "AUTO_TRADING409_04", "AI 서비스 준비 상태가 자동매매 시작을 허용하지 않습니다."),
   AI_START_REJECTED(HttpStatus.BAD_GATEWAY, "AUTO_TRADING502_01", "AI 서버가 자동매매 시작 요청을 거부했습니다."),
   AI_STOP_REJECTED(HttpStatus.BAD_GATEWAY, "AUTO_TRADING502_02", "AI 서버가 자동매매 중지 요청을 거부했습니다.");
 
