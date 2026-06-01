@@ -56,6 +56,18 @@ ai:
     bundle-id: BUNDLE-TEST
     top-k: 10
     include-diagnostics: false
+    cache-read-enabled: false
+    cache:
+      max-age-seconds: 180
+      max-future-skew-seconds: 5
+    refresh:
+      enabled: false
+      fixed-delay-ms: 60000
+      initial-delay-ms: 10000
+      market-hours-only: true
+      market-open: "09:00"
+      market-close: "15:30"
+      market-holidays: "2026-06-03,2026-07-17"
 
 auto-trading:
   kafka:

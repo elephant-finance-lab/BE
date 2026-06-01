@@ -13,6 +13,13 @@ import com.example.elephantfinancelab_be.domain.user.exception.code.UserErrorCod
 import com.example.elephantfinancelab_be.domain.user.repository.UserRepository;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.GeneralException;
 import com.example.elephantfinancelab_be.global.config.AiServerClient;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoField;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,6 +37,13 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class RecommendationQueryServiceImpl implements RecommendationQueryService {
 
+  private static final DateTimeFormatter MODEL_GENERATED_AT_FORMATTER =
+      new DateTimeFormatterBuilder()
+          .appendPattern("yyyy-MM-dd'T'HH:mm:ss")
+          .appendFraction(ChronoField.NANO_OF_SECOND, 0, 9, true)
+          .appendOffsetId()
+          .toFormatter();
+
   private final RecommendationRepository recommendationRepository;
   private final UserRepository userRepository;
   private final AiServerClient aiServerClient;
@@ -43,9 +57,29 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
   @Value("${ai.recommendations.include-diagnostics:false}")
   private boolean includeRecommendationDiagnostics;
 
+  @Value("${ai.recommendations.cache-read-enabled:false}")
+  private boolean cacheReadEnabled;
+
+  @Value("${ai.recommendations.cache.max-age-seconds:180}")
+  private long cacheMaxAgeSeconds;
+
+  @Value("${ai.recommendations.cache.max-future-skew-seconds:5}")
+  private long cacheMaxFutureSkewSeconds;
+
+  private Clock clock = Clock.systemUTC();
+
   @Override
   @Transactional
   public RecommendationResDTO.RecommendationListDTO findRecommendationList() {
+    if (cacheReadEnabled) {
+      return findCachedRecommendationList();
+    }
+    return refreshModelRecommendations();
+  }
+
+  @Override
+  @Transactional
+  public RecommendationResDTO.RecommendationListDTO refreshModelRecommendations() {
     GetRecommendationsResponse response =
         aiServerClient.getRecommendations(
             recommendationBundleId, recommendationTopK, includeRecommendationDiagnostics);
@@ -57,9 +91,10 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
       throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
     }
 
+    OffsetDateTime modelGeneratedAt = parseGeneratedAt(response.getGeneratedAt());
     List<Recommendation> recommendations =
         deduplicateByStockCode(response).values().stream()
-            .map(item -> upsertModelRecommendation(item, response))
+            .map(item -> upsertModelRecommendation(item, response, modelGeneratedAt))
             .toList();
     List<Recommendation> savedRecommendations = recommendationRepository.saveAll(recommendations);
     List<RecommendationResDTO.RecommendationInfoDTO> infoList =
@@ -70,11 +105,49 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
         "사용자 맞춤 투자 추천 리스트",
         response.getStatus(),
         response.getReason(),
-        response.getGeneratedAt(),
+        formatGeneratedAt(modelGeneratedAt),
         response.getBundleId(),
         response.getModelVersion(),
         response.getAsof(),
         response.getMode(),
+        infoList);
+  }
+
+  private RecommendationResDTO.RecommendationListDTO findCachedRecommendationList() {
+    Recommendation latest = findLatestCachedRecommendation();
+    OffsetDateTime latestGeneratedAt = latest.getModelGeneratedAt();
+    long cacheAgeSec = cacheAgeSec(latestGeneratedAt);
+    if (cacheAgeSec > cacheMaxAgeSeconds) {
+      log.warn(
+          "[Recommendation] cached model recommendations stale: generatedAt={}, ageSec={}, maxAgeSec={}",
+          formatGeneratedAt(latestGeneratedAt),
+          cacheAgeSec,
+          cacheMaxAgeSeconds);
+      throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+    }
+    List<Recommendation> savedRecommendations =
+        recommendationRepository.findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            latestGeneratedAt, latest.getModelBundleId());
+    if (savedRecommendations.isEmpty()) {
+      log.warn("[Recommendation] cached model recommendations unavailable");
+      throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+    }
+    List<RecommendationResDTO.RecommendationInfoDTO> infoList =
+        savedRecommendations.stream()
+            .map(RecommendationConverter::toRecommendationInfoDTO)
+            .toList();
+    return RecommendationConverter.toRecommendationListDTO(
+        "사용자 맞춤 투자 추천 리스트",
+        "PASS",
+        "cached_recommendations",
+        formatGeneratedAt(latestGeneratedAt),
+        latest.getModelBundleId(),
+        latest.getModelVersion(),
+        latest.getModelAsof(),
+        "cached",
+        cacheAgeSec,
+        false,
+        null,
         infoList);
   }
 
@@ -122,7 +195,9 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
   }
 
   private Recommendation upsertModelRecommendation(
-      RecommendationItem item, GetRecommendationsResponse response) {
+      RecommendationItem item,
+      GetRecommendationsResponse response,
+      OffsetDateTime modelGeneratedAt) {
     String stockCode = normalizedStockCode(item);
     Recommendation recommendation =
         recommendationRepository
@@ -139,7 +214,7 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
         item.getRiskLevel(),
         item.getModelVersion().isBlank() ? response.getModelVersion() : item.getModelVersion(),
         item.getBundleId().isBlank() ? response.getBundleId() : item.getBundleId(),
-        response.getGeneratedAt(),
+        modelGeneratedAt,
         response.getAsof());
     return recommendation;
   }
@@ -151,5 +226,48 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
       throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
     }
     return stockCode.toUpperCase(Locale.ROOT);
+  }
+
+  private long cacheAgeSec(OffsetDateTime generated) {
+    if (generated == null) {
+      throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+    }
+    OffsetDateTime now = OffsetDateTime.now(clock);
+    if (generated.toInstant().isAfter(now.plusSeconds(cacheMaxFutureSkewSeconds).toInstant())) {
+      log.warn(
+          "[Recommendation] cached model recommendations have future generatedAt={}, maxFutureSkewSec={}",
+          formatGeneratedAt(generated),
+          cacheMaxFutureSkewSeconds);
+      throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+    }
+    long ageSec = Duration.between(generated, now).getSeconds();
+    return Math.max(0L, ageSec);
+  }
+
+  private Recommendation findLatestCachedRecommendation() {
+    return recommendationRepository.findByModelGeneratedAtIsNotNull().stream()
+        .sorted(
+            Comparator.comparing(
+                    (Recommendation recommendation) ->
+                        recommendation.getModelGeneratedAt().toInstant())
+                .reversed()
+                .thenComparing(
+                    Recommendation::getRanking, Comparator.nullsLast(Comparator.naturalOrder())))
+        .findFirst()
+        .orElseThrow(
+            () -> new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE));
+  }
+
+  private OffsetDateTime parseGeneratedAt(String generatedAt) {
+    try {
+      return OffsetDateTime.parse(generatedAt);
+    } catch (DateTimeParseException | NullPointerException e) {
+      log.warn("[Recommendation] AI model response has invalid generatedAt={}", generatedAt);
+      throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+    }
+  }
+
+  private String formatGeneratedAt(OffsetDateTime generatedAt) {
+    return generatedAt == null ? null : MODEL_GENERATED_AT_FORMATTER.format(generatedAt);
   }
 }
