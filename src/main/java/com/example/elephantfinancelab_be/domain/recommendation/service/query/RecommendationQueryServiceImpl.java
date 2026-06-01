@@ -13,6 +13,10 @@ import com.example.elephantfinancelab_be.domain.user.exception.code.UserErrorCod
 import com.example.elephantfinancelab_be.domain.user.repository.UserRepository;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.GeneralException;
 import com.example.elephantfinancelab_be.global.config.AiServerClient;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,9 +47,26 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
   @Value("${ai.recommendations.include-diagnostics:false}")
   private boolean includeRecommendationDiagnostics;
 
+  @Value("${ai.recommendations.cache-read-enabled:false}")
+  private boolean cacheReadEnabled;
+
+  @Value("${ai.recommendations.cache.max-age-seconds:180}")
+  private long cacheMaxAgeSeconds;
+
+  private Clock clock = Clock.systemUTC();
+
   @Override
   @Transactional
   public RecommendationResDTO.RecommendationListDTO findRecommendationList() {
+    if (cacheReadEnabled) {
+      return findCachedRecommendationList();
+    }
+    return refreshModelRecommendations();
+  }
+
+  @Override
+  @Transactional
+  public RecommendationResDTO.RecommendationListDTO refreshModelRecommendations() {
     GetRecommendationsResponse response =
         aiServerClient.getRecommendations(
             recommendationBundleId, recommendationTopK, includeRecommendationDiagnostics);
@@ -75,6 +96,48 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
         response.getModelVersion(),
         response.getAsof(),
         response.getMode(),
+        infoList);
+  }
+
+  private RecommendationResDTO.RecommendationListDTO findCachedRecommendationList() {
+    Recommendation latest =
+        recommendationRepository
+            .findFirstByModelGeneratedAtIsNotNullOrderByModelGeneratedAtDescRankingAsc()
+            .orElseThrow(
+                () ->
+                    new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE));
+    long cacheAgeSec = cacheAgeSec(latest.getModelGeneratedAt());
+    if (cacheAgeSec > cacheMaxAgeSeconds) {
+      log.warn(
+          "[Recommendation] cached model recommendations stale: generatedAt={}, ageSec={}, maxAgeSec={}",
+          latest.getModelGeneratedAt(),
+          cacheAgeSec,
+          cacheMaxAgeSeconds);
+      throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+    }
+    List<Recommendation> savedRecommendations =
+        recommendationRepository.findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            latest.getModelGeneratedAt(), latest.getModelBundleId());
+    if (savedRecommendations.isEmpty()) {
+      log.warn("[Recommendation] cached model recommendations unavailable");
+      throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+    }
+    List<RecommendationResDTO.RecommendationInfoDTO> infoList =
+        savedRecommendations.stream()
+            .map(RecommendationConverter::toRecommendationInfoDTO)
+            .toList();
+    return RecommendationConverter.toRecommendationListDTO(
+        "사용자 맞춤 투자 추천 리스트",
+        "PASS",
+        "cached_recommendations",
+        latest.getModelGeneratedAt(),
+        latest.getModelBundleId(),
+        latest.getModelVersion(),
+        latest.getModelAsof(),
+        "cached",
+        cacheAgeSec,
+        false,
+        null,
         infoList);
   }
 
@@ -151,5 +214,17 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
       throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
     }
     return stockCode.toUpperCase(Locale.ROOT);
+  }
+
+  private long cacheAgeSec(String generatedAt) {
+    try {
+      OffsetDateTime generated = OffsetDateTime.parse(generatedAt);
+      long ageSec = Duration.between(generated, OffsetDateTime.now(clock)).getSeconds();
+      return Math.max(0L, ageSec);
+    } catch (DateTimeParseException | NullPointerException e) {
+      log.warn(
+          "[Recommendation] cached model recommendations have invalid generatedAt={}", generatedAt);
+      throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+    }
   }
 }

@@ -9,4 +9,10 @@ public interface RecommendationRepository extends JpaRepository<Recommendation, 
   Optional<Recommendation> findByTickerCodeIgnoreCase(String tickerCode);
 
   List<Recommendation> findAllByOrderByRankingAsc();
+
+  Optional<Recommendation>
+      findFirstByModelGeneratedAtIsNotNullOrderByModelGeneratedAtDescRankingAsc();
+
+  List<Recommendation> findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+      String modelGeneratedAt, String modelBundleId);
 }

@@ -122,6 +122,17 @@ ai:
     bundle-id: ${AI_RECOMMENDATION_BUNDLE_ID:}
     top-k: ${AI_RECOMMENDATION_TOP_K:10}
     include-diagnostics: ${AI_RECOMMENDATION_INCLUDE_DIAGNOSTICS:false}
+    cache-read-enabled: ${AI_RECOMMENDATION_CACHE_READ_ENABLED:false}
+    cache:
+      max-age-seconds: ${AI_RECOMMENDATION_CACHE_MAX_AGE_SECONDS:180}
+    refresh:
+      enabled: ${AI_RECOMMENDATION_REFRESH_ENABLED:false}
+      fixed-delay-ms: ${AI_RECOMMENDATION_REFRESH_FIXED_DELAY_MS:60000}
+      initial-delay-ms: ${AI_RECOMMENDATION_REFRESH_INITIAL_DELAY_MS:10000}
+      market-hours-only: ${AI_RECOMMENDATION_REFRESH_MARKET_HOURS_ONLY:true}
+      market-open: ${AI_RECOMMENDATION_REFRESH_MARKET_OPEN:09:00}
+      market-close: ${AI_RECOMMENDATION_REFRESH_MARKET_CLOSE:15:30}
+      market-holidays: ${AI_RECOMMENDATION_REFRESH_MARKET_HOLIDAYS:2026-06-03,2026-07-17}
 
 auto-trading:
   kafka:

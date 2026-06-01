@@ -19,6 +19,34 @@ public final class RecommendationConverter {
       String asof,
       String mode,
       List<RecommendationResDTO.RecommendationInfoDTO> infoList) {
+    return toRecommendationListDTO(
+        profile,
+        modelStatus,
+        modelReason,
+        generatedAt,
+        bundleId,
+        modelVersion,
+        asof,
+        mode,
+        null,
+        false,
+        null,
+        infoList);
+  }
+
+  public static RecommendationResDTO.RecommendationListDTO toRecommendationListDTO(
+      String profile,
+      String modelStatus,
+      String modelReason,
+      String generatedAt,
+      String bundleId,
+      String modelVersion,
+      String asof,
+      String mode,
+      Long cacheAgeSec,
+      Boolean stale,
+      String staleReason,
+      List<RecommendationResDTO.RecommendationInfoDTO> infoList) {
     return RecommendationResDTO.RecommendationListDTO.builder()
         .userProfileSummary(profile)
         .modelStatus(modelStatus)
@@ -28,6 +56,12 @@ public final class RecommendationConverter {
         .modelVersion(modelVersion)
         .asof(asof)
         .mode(mode)
+        .cacheAgeSec(cacheAgeSec)
+        .stale(stale)
+        .staleReason(staleReason)
+        .advisoryOnly(true)
+        .safeToEnableOrderActions(false)
+        .liveTradingAllowed(false)
         .recommendations(infoList)
         .build();
   }
