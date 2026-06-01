@@ -59,6 +59,7 @@ ai:
     cache-read-enabled: false
     cache:
       max-age-seconds: 180
+      max-future-skew-seconds: 5
     refresh:
       enabled: false
       fixed-delay-ms: 60000

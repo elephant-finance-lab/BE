@@ -10,8 +10,7 @@ public interface RecommendationRepository extends JpaRepository<Recommendation, 
 
   List<Recommendation> findAllByOrderByRankingAsc();
 
-  Optional<Recommendation>
-      findFirstByModelGeneratedAtIsNotNullOrderByModelGeneratedAtDescRankingAsc();
+  List<Recommendation> findByModelGeneratedAtIsNotNull();
 
   List<Recommendation> findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
       String modelGeneratedAt, String modelBundleId);

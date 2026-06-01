@@ -42,6 +42,7 @@ class RecommendationQueryServiceImplTest {
     ReflectionTestUtils.setField(service, "includeRecommendationDiagnostics", false);
     ReflectionTestUtils.setField(service, "cacheReadEnabled", false);
     ReflectionTestUtils.setField(service, "cacheMaxAgeSeconds", 180L);
+    ReflectionTestUtils.setField(service, "cacheMaxFutureSkewSeconds", 5L);
     ReflectionTestUtils.setField(
         service, "clock", Clock.fixed(Instant.parse("2026-06-01T01:01:00Z"), ZoneOffset.UTC));
   }
@@ -126,9 +127,7 @@ class RecommendationQueryServiceImplTest {
             .modelAsof("2026-06-01T09:59:00+09:00")
             .riskLevel("low")
             .build();
-    when(recommendationRepository
-            .findFirstByModelGeneratedAtIsNotNullOrderByModelGeneratedAtDescRankingAsc())
-        .thenReturn(Optional.of(cached));
+    when(recommendationRepository.findByModelGeneratedAtIsNotNull()).thenReturn(List.of(cached));
     when(recommendationRepository.findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
             "2026-06-01T10:00:00+09:00", "BUNDLE-TEST"))
         .thenReturn(List.of(cached));
@@ -180,9 +179,8 @@ class RecommendationQueryServiceImplTest {
             .modelGeneratedAt("2026-06-01T09:55:00+09:00")
             .modelAsof("2026-06-01T09:54:00+09:00")
             .build();
-    when(recommendationRepository
-            .findFirstByModelGeneratedAtIsNotNullOrderByModelGeneratedAtDescRankingAsc())
-        .thenReturn(Optional.of(latest));
+    when(recommendationRepository.findByModelGeneratedAtIsNotNull())
+        .thenReturn(List.of(old, latest));
     when(recommendationRepository.findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
             "2026-06-01T10:00:00+09:00", "BUNDLE-LATEST"))
         .thenReturn(List.of(latest));
@@ -199,6 +197,49 @@ class RecommendationQueryServiceImplTest {
   }
 
   @Test
+  void selectsLatestCachedBatchByParsedTimestampInsteadOfStringOrder() {
+    ReflectionTestUtils.setField(service, "cacheReadEnabled", true);
+    Recommendation stringSortedFirstButOlder =
+        Recommendation.builder()
+            .id(1L)
+            .tickerCode("005930")
+            .companyName("삼성전자")
+            .ranking(1)
+            .modelBundleId("BUNDLE-KST-OLDER")
+            .modelGeneratedAt("2026-06-01T10:30:00+09:00")
+            .modelAsof("2026-06-01T10:29:00+09:00")
+            .build();
+    Recommendation actuallyLatest =
+        Recommendation.builder()
+            .id(2L)
+            .tickerCode("000660")
+            .companyName("SK하이닉스")
+            .ranking(1)
+            .modelBundleId("BUNDLE-UTC-LATEST")
+            .modelGeneratedAt("2026-06-01T02:00:00Z")
+            .modelAsof("2026-06-01T01:59:00Z")
+            .build();
+    ReflectionTestUtils.setField(
+        service, "clock", Clock.fixed(Instant.parse("2026-06-01T02:01:00Z"), ZoneOffset.UTC));
+    when(recommendationRepository.findByModelGeneratedAtIsNotNull())
+        .thenReturn(List.of(stringSortedFirstButOlder, actuallyLatest));
+    when(recommendationRepository.findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            "2026-06-01T02:00:00Z", "BUNDLE-UTC-LATEST"))
+        .thenReturn(List.of(actuallyLatest));
+
+    RecommendationResDTO.RecommendationListDTO result = service.findRecommendationList();
+
+    assertThat(result.getBundleId()).isEqualTo("BUNDLE-UTC-LATEST");
+    assertThat(result.getGeneratedAt()).isEqualTo("2026-06-01T02:00:00Z");
+    verify(recommendationRepository)
+        .findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            "2026-06-01T02:00:00Z", "BUNDLE-UTC-LATEST");
+    verify(recommendationRepository, never())
+        .findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            "2026-06-01T10:30:00+09:00", "BUNDLE-KST-OLDER");
+  }
+
+  @Test
   void rejectsStaleCachedRecommendationsBeforeReturningRows() {
     ReflectionTestUtils.setField(service, "cacheReadEnabled", true);
     Recommendation stale =
@@ -211,9 +252,7 @@ class RecommendationQueryServiceImplTest {
             .modelGeneratedAt("2026-06-01T09:55:00+09:00")
             .modelAsof("2026-06-01T09:54:00+09:00")
             .build();
-    when(recommendationRepository
-            .findFirstByModelGeneratedAtIsNotNullOrderByModelGeneratedAtDescRankingAsc())
-        .thenReturn(Optional.of(stale));
+    when(recommendationRepository.findByModelGeneratedAtIsNotNull()).thenReturn(List.of(stale));
 
     assertThatThrownBy(service::findRecommendationList)
         .isInstanceOf(GeneralException.class)
@@ -223,6 +262,32 @@ class RecommendationQueryServiceImplTest {
     verify(recommendationRepository, never())
         .findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
             "2026-06-01T09:55:00+09:00", "BUNDLE-TEST");
+    verifyNoInteractions(aiServerClient);
+  }
+
+  @Test
+  void rejectsFutureCachedRecommendationsBeyondClockSkew() {
+    ReflectionTestUtils.setField(service, "cacheReadEnabled", true);
+    Recommendation future =
+        Recommendation.builder()
+            .id(1L)
+            .tickerCode("005930")
+            .companyName("삼성전자")
+            .ranking(1)
+            .modelBundleId("BUNDLE-FUTURE")
+            .modelGeneratedAt("2026-06-01T01:02:00Z")
+            .modelAsof("2026-06-01T01:01:00Z")
+            .build();
+    when(recommendationRepository.findByModelGeneratedAtIsNotNull()).thenReturn(List.of(future));
+
+    assertThatThrownBy(service::findRecommendationList)
+        .isInstanceOf(GeneralException.class)
+        .extracting("code")
+        .isEqualTo(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+
+    verify(recommendationRepository, never())
+        .findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            "2026-06-01T01:02:00Z", "BUNDLE-FUTURE");
     verifyNoInteractions(aiServerClient);
   }
 

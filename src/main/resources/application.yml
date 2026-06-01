@@ -125,6 +125,7 @@ ai:
     cache-read-enabled: ${AI_RECOMMENDATION_CACHE_READ_ENABLED:false}
     cache:
       max-age-seconds: ${AI_RECOMMENDATION_CACHE_MAX_AGE_SECONDS:180}
+      max-future-skew-seconds: ${AI_RECOMMENDATION_CACHE_MAX_FUTURE_SKEW_SECONDS:5}
     refresh:
       enabled: ${AI_RECOMMENDATION_REFRESH_ENABLED:false}
       fixed-delay-ms: ${AI_RECOMMENDATION_REFRESH_FIXED_DELAY_MS:60000}

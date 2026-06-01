@@ -53,6 +53,9 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
   @Value("${ai.recommendations.cache.max-age-seconds:180}")
   private long cacheMaxAgeSeconds;
 
+  @Value("${ai.recommendations.cache.max-future-skew-seconds:5}")
+  private long cacheMaxFutureSkewSeconds;
+
   private Clock clock = Clock.systemUTC();
 
   @Override
@@ -100,12 +103,7 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
   }
 
   private RecommendationResDTO.RecommendationListDTO findCachedRecommendationList() {
-    Recommendation latest =
-        recommendationRepository
-            .findFirstByModelGeneratedAtIsNotNullOrderByModelGeneratedAtDescRankingAsc()
-            .orElseThrow(
-                () ->
-                    new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE));
+    Recommendation latest = findLatestCachedRecommendation();
     long cacheAgeSec = cacheAgeSec(latest.getModelGeneratedAt());
     if (cacheAgeSec > cacheMaxAgeSeconds) {
       log.warn(
@@ -217,10 +215,36 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
   }
 
   private long cacheAgeSec(String generatedAt) {
+    OffsetDateTime generated = parseGeneratedAt(generatedAt);
+    OffsetDateTime now = OffsetDateTime.now(clock);
+    if (generated.toInstant().isAfter(now.plusSeconds(cacheMaxFutureSkewSeconds).toInstant())) {
+      log.warn(
+          "[Recommendation] cached model recommendations have future generatedAt={}, maxFutureSkewSec={}",
+          generatedAt,
+          cacheMaxFutureSkewSeconds);
+      throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+    }
+    long ageSec = Duration.between(generated, now).getSeconds();
+    return Math.max(0L, ageSec);
+  }
+
+  private Recommendation findLatestCachedRecommendation() {
+    return recommendationRepository.findByModelGeneratedAtIsNotNull().stream()
+        .sorted(
+            Comparator.comparing(
+                    (Recommendation recommendation) ->
+                        parseGeneratedAt(recommendation.getModelGeneratedAt()).toInstant())
+                .reversed()
+                .thenComparing(
+                    Recommendation::getRanking, Comparator.nullsLast(Comparator.naturalOrder())))
+        .findFirst()
+        .orElseThrow(
+            () -> new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE));
+  }
+
+  private OffsetDateTime parseGeneratedAt(String generatedAt) {
     try {
-      OffsetDateTime generated = OffsetDateTime.parse(generatedAt);
-      long ageSec = Duration.between(generated, OffsetDateTime.now(clock)).getSeconds();
-      return Math.max(0L, ageSec);
+      return OffsetDateTime.parse(generatedAt);
     } catch (DateTimeParseException | NullPointerException e) {
       log.warn(
           "[Recommendation] cached model recommendations have invalid generatedAt={}", generatedAt);
