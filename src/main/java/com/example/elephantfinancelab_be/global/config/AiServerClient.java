@@ -37,30 +37,41 @@ public class AiServerClient {
 
   private final AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stub;
   private final int timeout;
+  private final int recommendationsTimeout;
 
   public AiServerClient(
       AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stub,
-      @Value("${ai.server.timeout}") int timeout) {
+      @Value("${ai.server.timeout}") int timeout,
+      @Value("${ai.server.recommendations-timeout:0}") int recommendationsTimeout) {
     this.stub = stub;
     this.timeout = timeout;
+    this.recommendationsTimeout = recommendationsTimeout > 0 ? recommendationsTimeout : timeout;
   }
 
   private AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stubWithDeadline() {
     return stub.withDeadlineAfter(timeout, TimeUnit.SECONDS);
   }
 
+  private AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stubWithDeadline(int timeoutSeconds) {
+    return stub.withDeadlineAfter(timeoutSeconds, TimeUnit.SECONDS);
+  }
+
   private <T> T execute(String operation, Supplier<T> call) {
+    return execute(operation, timeout, call);
+  }
+
+  private <T> T execute(String operation, int timeoutSeconds, Supplier<T> call) {
     long startedAt = System.nanoTime();
     try {
       T result = call.get();
       log.info(
           "[AI Client] gRPC success operation={}, timeoutSeconds={}, elapsedMs={}",
           operation,
-          timeout,
+          timeoutSeconds,
           elapsedMillis(startedAt));
       return result;
     } catch (StatusRuntimeException e) {
-      throw mapToAiServerException(e, operation, elapsedMillis(startedAt));
+      throw mapToAiServerException(e, operation, timeoutSeconds, elapsedMillis(startedAt));
     }
   }
 
@@ -74,14 +85,14 @@ public class AiServerClient {
   }
 
   private AiServerException mapToAiServerException(
-      StatusRuntimeException e, String operation, long elapsedMs) {
+      StatusRuntimeException e, String operation, int timeoutSeconds, long elapsedMs) {
     Status.Code code = e.getStatus().getCode();
     if (code == Status.Code.DEADLINE_EXCEEDED || code == Status.Code.CANCELLED) {
       log.warn(
           "[AI Client] gRPC deadline/cancel operation={}, status={}, timeoutSeconds={}, elapsedMs={}, message={}",
           operation,
           code,
-          timeout,
+          timeoutSeconds,
           elapsedMs,
           e.getMessage());
     } else {
@@ -89,7 +100,7 @@ public class AiServerClient {
           "[AI Client] gRPC error operation={}, status={}, timeoutSeconds={}, elapsedMs={}, message={}",
           operation,
           code,
-          timeout,
+          timeoutSeconds,
           elapsedMs,
           e.getMessage());
     }
@@ -178,7 +189,10 @@ public class AiServerClient {
       request.setTopK(topK);
     }
     GetRecommendationsResponse response =
-        execute("getRecommendations", () -> stubWithDeadline().getRecommendations(request.build()));
+        execute(
+            "getRecommendations",
+            recommendationsTimeout,
+            () -> stubWithDeadline(recommendationsTimeout).getRecommendations(request.build()));
     log.info(
         "[AI Client] 추천 조회 완료: status={}, count={}",
         response.getStatus(),

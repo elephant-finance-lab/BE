@@ -178,6 +178,51 @@ class AutoTradingCommandServiceImplTest {
   }
 
   @Test
+  void exposesPaperAutoReadinessForFrontendGate() {
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST"))
+        .thenReturn(
+            ServiceReadinessResponse.newBuilder()
+                .setStatus("PASS")
+                .setGeneratedAt("2026-06-01T10:00:00+09:00")
+                .setBundleId("BUNDLE-TEST")
+                .setDeployQuality("candidate")
+                .setBrokerEvidence("external_kis_virtual")
+                .setSafeToShowDashboard(true)
+                .setSafeToEnableOrderActions(true)
+                .setLiveTradingAllowed(false)
+                .setSafeToEnableLiveActions(false)
+                .setDetailsJson("{\"ok\":true}")
+                .build());
+
+    AutoTradingResDTO.Readiness result = service.getReadiness();
+
+    assertThat(result.getStatus()).isEqualTo("PASS");
+    assertThat(result.getBundleId()).isEqualTo("BUNDLE-TEST");
+    assertThat(result.isCanStartPaperAutoTrading()).isTrue();
+    assertThat(result.getBlockedReason()).isNull();
+    assertThat(result.isSafeToEnableOrderActions()).isTrue();
+    assertThat(result.isLiveTradingAllowed()).isFalse();
+    assertThat(result.getDetailsJson()).isEqualTo("{\"ok\":true}");
+  }
+
+  @Test
+  void exposesBlockedPaperAutoReadinessReason() {
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST"))
+        .thenReturn(
+            ServiceReadinessResponse.newBuilder()
+                .setStatus("PASS")
+                .setSafeToEnableOrderActions(false)
+                .setLiveTradingAllowed(false)
+                .setSafeToEnableLiveActions(false)
+                .build());
+
+    AutoTradingResDTO.Readiness result = service.getReadiness();
+
+    assertThat(result.isCanStartPaperAutoTrading()).isFalse();
+    assertThat(result.getBlockedReason()).isEqualTo("order_actions_disabled");
+  }
+
+  @Test
   void rejectsStartWhenAnySelectedRecommendationHasBlankTicker() {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());

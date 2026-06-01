@@ -49,6 +49,7 @@ ai:
     host: localhost
     port: 50051
     timeout: 5
+    recommendations-timeout: 5
   paper-auto:
     bundle-id: BUNDLE-TEST
     confirm-phrase: PAPER_AUTO_OK
@@ -59,6 +60,8 @@ ai:
     cache-read-enabled: false
     cache:
       max-age-seconds: 180
+      serve-stale: true
+      max-stale-age-seconds: 86400
       max-future-skew-seconds: 5
     refresh:
       enabled: false

@@ -162,6 +162,27 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     return AutoTradingConverter.toSession(autoTradingSessionRepository.saveAndFlush(session));
   }
 
+  @Override
+  public AutoTradingResDTO.Readiness getReadiness() {
+    ServiceReadinessResponse readiness = aiServerClient.getServiceReadiness(bundleId);
+    boolean canStartPaperAutoTrading = isPaperAutoReady(readiness);
+    return AutoTradingResDTO.Readiness.builder()
+        .status(readiness.getStatus())
+        .generatedAt(readiness.getGeneratedAt())
+        .bundleId(readiness.getBundleId())
+        .deployQuality(readiness.getDeployQuality())
+        .brokerEvidence(readiness.getBrokerEvidence())
+        .liveTradingAllowed(readiness.getLiveTradingAllowed())
+        .registryMutated(readiness.getRegistryMutated())
+        .safeToShowDashboard(readiness.getSafeToShowDashboard())
+        .safeToEnableOrderActions(readiness.getSafeToEnableOrderActions())
+        .safeToEnableLiveActions(readiness.getSafeToEnableLiveActions())
+        .canStartPaperAutoTrading(canStartPaperAutoTrading)
+        .blockedReason(canStartPaperAutoTrading ? null : paperAutoBlockedReason(readiness))
+        .detailsJson(readiness.getDetailsJson())
+        .build();
+  }
+
   private List<String> findSelectedTickers(Long userId, List<Long> recommendationIds) {
     if (recommendationIds.isEmpty()) {
       throw new AutoTradingException(AutoTradingErrorCode.INVALID_RECOMMENDATIONS);
@@ -191,13 +212,33 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
 
   private void requirePaperAutoReadiness() {
     ServiceReadinessResponse readiness = aiServerClient.getServiceReadiness(bundleId);
-    if (readiness == null
-        || !"PASS".equalsIgnoreCase(readiness.getStatus())
-        || !readiness.getSafeToEnableOrderActions()
-        || readiness.getLiveTradingAllowed()
-        || readiness.getSafeToEnableLiveActions()) {
+    if (!isPaperAutoReady(readiness)) {
       throw new AutoTradingException(AutoTradingErrorCode.READINESS_GATE_BLOCKED);
     }
+  }
+
+  private static boolean isPaperAutoReady(ServiceReadinessResponse readiness) {
+    return readiness != null
+        && "PASS".equalsIgnoreCase(readiness.getStatus())
+        && readiness.getSafeToEnableOrderActions()
+        && !readiness.getLiveTradingAllowed()
+        && !readiness.getSafeToEnableLiveActions();
+  }
+
+  private static String paperAutoBlockedReason(ServiceReadinessResponse readiness) {
+    if (readiness == null) {
+      return "readiness_unavailable";
+    }
+    if (!"PASS".equalsIgnoreCase(readiness.getStatus())) {
+      return "readiness_status_not_pass";
+    }
+    if (!readiness.getSafeToEnableOrderActions()) {
+      return "order_actions_disabled";
+    }
+    if (readiness.getLiveTradingAllowed() || readiness.getSafeToEnableLiveActions()) {
+      return "live_action_gate_enabled";
+    }
+    return "readiness_gate_blocked";
   }
 
   private static String requireIdempotencyKey(String idempotencyKey) {

@@ -49,6 +49,8 @@ class RecommendationQueryServiceImplTest {
     ReflectionTestUtils.setField(service, "includeRecommendationDiagnostics", false);
     ReflectionTestUtils.setField(service, "cacheReadEnabled", false);
     ReflectionTestUtils.setField(service, "cacheMaxAgeSeconds", 180L);
+    ReflectionTestUtils.setField(service, "serveStaleCache", true);
+    ReflectionTestUtils.setField(service, "cacheMaxStaleAgeSeconds", 86400L);
     ReflectionTestUtils.setField(service, "cacheMaxFutureSkewSeconds", 5L);
     ReflectionTestUtils.setField(
         service, "clock", Clock.fixed(Instant.parse("2026-06-01T01:01:00Z"), ZoneOffset.UTC));
@@ -283,8 +285,9 @@ class RecommendationQueryServiceImplTest {
   }
 
   @Test
-  void rejectsStaleCachedRecommendationsBeforeReturningRows() {
+  void fallsBackToAiWhenStaleCacheCannotBeServed() {
     ReflectionTestUtils.setField(service, "cacheReadEnabled", true);
+    ReflectionTestUtils.setField(service, "serveStaleCache", false);
     Recommendation stale =
         Recommendation.builder()
             .id(1L)
@@ -296,6 +299,12 @@ class RecommendationQueryServiceImplTest {
             .modelAsof("2026-06-01T09:54:00+09:00")
             .build();
     when(recommendationRepository.findByModelGeneratedAtIsNotNull()).thenReturn(List.of(stale));
+    when(aiServerClient.getRecommendations("BUNDLE-TEST", 10, false))
+        .thenReturn(
+            GetRecommendationsResponse.newBuilder()
+                .setStatus("BLOCKED")
+                .setReason("quant_agent_unavailable")
+                .build());
 
     assertThatThrownBy(service::findRecommendationList)
         .isInstanceOf(GeneralException.class)
@@ -305,11 +314,82 @@ class RecommendationQueryServiceImplTest {
     verify(recommendationRepository, never())
         .findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
             generatedAt("2026-06-01T09:55:00+09:00"), "BUNDLE-TEST");
+    verify(aiServerClient).getRecommendations("BUNDLE-TEST", 10, false);
+  }
+
+  @Test
+  void returnsStaleCachedRecommendationsWhenStaleServingIsEnabled() {
+    ReflectionTestUtils.setField(service, "cacheReadEnabled", true);
+    Recommendation stale =
+        Recommendation.builder()
+            .id(1L)
+            .tickerCode("005930")
+            .companyName("삼성전자")
+            .ranking(1)
+            .modelBundleId("BUNDLE-TEST")
+            .modelVersion("v2")
+            .modelGeneratedAt(generatedAt("2026-06-01T09:55:00+09:00"))
+            .modelAsof("2026-06-01T09:54:00+09:00")
+            .build();
+    when(recommendationRepository.findByModelGeneratedAtIsNotNull()).thenReturn(List.of(stale));
+    when(recommendationRepository.findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            generatedAt("2026-06-01T09:55:00+09:00"), "BUNDLE-TEST"))
+        .thenReturn(List.of(stale));
+
+    RecommendationResDTO.RecommendationListDTO result = service.findRecommendationList();
+
+    assertThat(result.getModelStatus()).isEqualTo("PASS");
+    assertThat(result.getModelReason()).isEqualTo("cached_recommendations_stale");
+    assertThat(result.getCacheAgeSec()).isEqualTo(360L);
+    assertThat(result.getStale()).isTrue();
+    assertThat(result.getStaleReason()).isEqualTo("cache_age_exceeded");
+    assertThat(result.getRecommendations())
+        .extracting(RecommendationResDTO.RecommendationInfoDTO::getStockCode)
+        .containsExactly("005930");
     verifyNoInteractions(aiServerClient);
   }
 
   @Test
-  void rejectsFutureCachedRecommendationsBeyondClockSkew() {
+  void fallsBackToAiRefreshWhenCacheReadMisses() {
+    ReflectionTestUtils.setField(service, "cacheReadEnabled", true);
+    Recommendation recommendation =
+        Recommendation.builder().id(1L).tickerCode("005930").companyName("삼성전자").build();
+    RecommendationItem item =
+        RecommendationItem.newBuilder()
+            .setRecommendationId("MODEL-1")
+            .setStockCode("005930")
+            .setStockName("삼성전자")
+            .setRanking(1)
+            .setScore(0.92)
+            .setReason("MODEL_RANKING_SIGNAL")
+            .setRiskLevel("low")
+            .build();
+    GetRecommendationsResponse response =
+        GetRecommendationsResponse.newBuilder()
+            .setStatus("PASS")
+            .setReason("recommendations_ready")
+            .setGeneratedAt("2026-06-01T10:00:00+09:00")
+            .setBundleId("BUNDLE-TEST")
+            .addRecommendations(item)
+            .build();
+    when(recommendationRepository.findByModelGeneratedAtIsNotNull()).thenReturn(List.of());
+    when(aiServerClient.getRecommendations("BUNDLE-TEST", 10, false)).thenReturn(response);
+    when(recommendationRepository.findByTickerCodeIgnoreCase("005930"))
+        .thenReturn(Optional.of(recommendation));
+    when(recommendationRepository.saveAll(org.mockito.ArgumentMatchers.anyList()))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    RecommendationResDTO.RecommendationListDTO result = service.findRecommendationList();
+
+    assertThat(result.getModelReason()).isEqualTo("recommendations_ready");
+    assertThat(result.getRecommendations())
+        .extracting(RecommendationResDTO.RecommendationInfoDTO::getStockCode)
+        .containsExactly("005930");
+    verify(aiServerClient).getRecommendations("BUNDLE-TEST", 10, false);
+  }
+
+  @Test
+  void fallsBackToAiWhenCachedRecommendationsAreFromFuture() {
     ReflectionTestUtils.setField(service, "cacheReadEnabled", true);
     Recommendation future =
         Recommendation.builder()
@@ -322,6 +402,12 @@ class RecommendationQueryServiceImplTest {
             .modelAsof("2026-06-01T01:01:00Z")
             .build();
     when(recommendationRepository.findByModelGeneratedAtIsNotNull()).thenReturn(List.of(future));
+    when(aiServerClient.getRecommendations("BUNDLE-TEST", 10, false))
+        .thenReturn(
+            GetRecommendationsResponse.newBuilder()
+                .setStatus("BLOCKED")
+                .setReason("quant_agent_unavailable")
+                .build());
 
     assertThatThrownBy(service::findRecommendationList)
         .isInstanceOf(GeneralException.class)
@@ -331,7 +417,7 @@ class RecommendationQueryServiceImplTest {
     verify(recommendationRepository, never())
         .findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
             generatedAt("2026-06-01T01:02:00Z"), "BUNDLE-FUTURE");
-    verifyNoInteractions(aiServerClient);
+    verify(aiServerClient).getRecommendations("BUNDLE-TEST", 10, false);
   }
 
   @Test

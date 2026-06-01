@@ -66,6 +66,16 @@ public class AutoTradingController {
         .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }
 
+  @Operation(
+      summary = "AI 자동매매 readiness 조회",
+      description = "FE 버튼 게이팅용 AI paper-auto readiness를 조회합니다.")
+  @GetMapping("/readiness")
+  public ResponseEntity<ApiResponse<AutoTradingResDTO.Readiness>> getReadiness() {
+    AutoTradingResDTO.Readiness result = autoTradingCommandService.getReadiness();
+    return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
+        .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+  }
+
   @Operation(summary = "자동매매 세션 조회", description = "BE DB에 저장된 세션 상태를 조회합니다.")
   @GetMapping("/{sessionId}")
   public ResponseEntity<ApiResponse<AutoTradingResDTO.Session>> getSession(

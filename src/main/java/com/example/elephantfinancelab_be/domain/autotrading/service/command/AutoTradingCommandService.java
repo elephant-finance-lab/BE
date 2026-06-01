@@ -9,4 +9,6 @@ public interface AutoTradingCommandService {
       Long userId, String idempotencyKey, AutoTradingReqDTO.StartSession request);
 
   AutoTradingResDTO.Session stopSession(Long userId, String sessionId);
+
+  AutoTradingResDTO.Readiness getReadiness();
 }
