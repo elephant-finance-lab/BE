@@ -7,7 +7,6 @@ import com.example.elephantfinancelab_be.domain.portfolio.entity.TradeType;
 import com.example.elephantfinancelab_be.domain.portfolio.exception.PortfolioException;
 import com.example.elephantfinancelab_be.domain.portfolio.exception.code.PortfolioErrorCode;
 import com.example.elephantfinancelab_be.domain.portfolio.repository.HoldingAiDetailRepository;
-import com.example.elephantfinancelab_be.domain.portfolio.repository.PositionRepository;
 import com.example.elephantfinancelab_be.domain.portfolio.service.KisPortfolioClient;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -23,7 +22,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class PortfolioQueryServiceImpl implements PortfolioQueryService {
 
-  private final PositionRepository positionRepository;
   private final HoldingAiDetailRepository holdingAiDetailRepository;
   private final KisPortfolioClient kisPortfolioClient;
 
@@ -69,9 +67,12 @@ public class PortfolioQueryServiceImpl implements PortfolioQueryService {
   @Override
   public PortfolioResDTO.HoldingAiDetail findHoldingDetail(Long userId, String tickerCode) {
     String normalizedTicker = tickerCode.toUpperCase();
-    positionRepository
-        .findByUserIdAndTickerCode(userId, normalizedTicker)
-        .orElseThrow(() -> new PortfolioException(PortfolioErrorCode.HOLDING404_01));
+    boolean hasHolding =
+        kisPortfolioClient.fetchBalance().holdings().stream()
+            .anyMatch(holding -> holding.stockCode().equalsIgnoreCase(normalizedTicker));
+    if (!hasHolding) {
+      throw new PortfolioException(PortfolioErrorCode.HOLDING404_01);
+    }
     HoldingAiDetail aiDetail =
         holdingAiDetailRepository
             .findTopByTickerCodeOrderByGeneratedAtDesc(normalizedTicker)
@@ -86,8 +87,6 @@ public class PortfolioQueryServiceImpl implements PortfolioQueryService {
     return switch (period.toUpperCase()) {
       case "1W" -> endDate.minusWeeks(1);
       case "3M" -> endDate.minusMonths(3);
-      case "6M" -> endDate.minusMonths(6);
-      case "1Y" -> endDate.minusYears(1);
       default -> endDate.minusMonths(1);
     };
   }

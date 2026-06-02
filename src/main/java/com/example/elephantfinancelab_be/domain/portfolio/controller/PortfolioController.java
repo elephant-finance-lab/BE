@@ -2,6 +2,8 @@ package com.example.elephantfinancelab_be.domain.portfolio.controller;
 
 import com.example.elephantfinancelab_be.domain.portfolio.dto.res.PortfolioResDTO;
 import com.example.elephantfinancelab_be.domain.portfolio.entity.TradeType;
+import com.example.elephantfinancelab_be.domain.portfolio.exception.PortfolioException;
+import com.example.elephantfinancelab_be.domain.portfolio.exception.code.PortfolioErrorCode;
 import com.example.elephantfinancelab_be.domain.portfolio.service.query.PortfolioQueryService;
 import com.example.elephantfinancelab_be.domain.user.entity.User;
 import com.example.elephantfinancelab_be.domain.user.exception.UserException;
@@ -13,6 +15,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.util.Locale;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
@@ -26,6 +30,8 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 @RequestMapping("/api/portfolio")
 public class PortfolioController {
+
+  private static final Set<String> SUPPORTED_TRADE_PERIODS = Set.of("1W", "1M", "3M");
 
   private final PortfolioQueryService portfolioQueryService;
   private final UserRepository userRepository;
@@ -82,10 +88,11 @@ public class PortfolioController {
       @RequestParam(defaultValue = "1M") String period,
       @RequestParam(defaultValue = "0") @Min(0) int page,
       @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-    TradeType tradeType = side != null ? side : type;
+    TradeType tradeType = resolveTradeType(type, side);
+    String normalizedPeriod = normalizeTradePeriod(period);
     PortfolioResDTO.TradePage result =
         portfolioQueryService.findTrades(
-            resolveUserId(email), tradeType, period, PageRequest.of(page, size));
+            resolveUserId(email), tradeType, normalizedPeriod, PageRequest.of(page, size));
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
         .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }
@@ -98,5 +105,20 @@ public class PortfolioController {
         portfolioQueryService.findHoldingDetail(resolveUserId(email), ticker);
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
         .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+  }
+
+  private TradeType resolveTradeType(TradeType type, TradeType side) {
+    if (type != null && side != null && type != side) {
+      throw new PortfolioException(PortfolioErrorCode.TRADE_QUERY_PARAM_CONFLICT);
+    }
+    return side != null ? side : type;
+  }
+
+  private String normalizeTradePeriod(String period) {
+    String normalized = period == null ? "1M" : period.trim().toUpperCase(Locale.ROOT);
+    if (!SUPPORTED_TRADE_PERIODS.contains(normalized)) {
+      throw new PortfolioException(PortfolioErrorCode.UNSUPPORTED_TRADE_PERIOD);
+    }
+    return normalized;
   }
 }
