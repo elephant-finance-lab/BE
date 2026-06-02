@@ -100,15 +100,16 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
               tickers,
               confirmPhrase);
     } catch (AiServerException e) {
-      session.markStartFailed(e.getCode().getMessage());
+      session.markStartFailed(e.getClientMessage());
       autoTradingSessionRepository.saveAndFlush(session);
       throw e;
     }
 
     if (!response.getAccepted()) {
-      session.markStartFailed(aiMessage(response.getStatus(), response.getReason()));
+      String message = aiMessage(response.getStatus(), response.getReason());
+      session.markStartFailed(message);
       autoTradingSessionRepository.saveAndFlush(session);
-      throw new AutoTradingException(AutoTradingErrorCode.AI_START_REJECTED);
+      throw new AutoTradingException(AutoTradingErrorCode.AI_START_REJECTED, message);
     }
 
     session.markRunning(
@@ -138,7 +139,7 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
           aiServerClient.stopPaperAutoTrading(
               UUID.randomUUID().toString(), session.getAiSessionId());
     } catch (AiServerException e) {
-      session.restoreStatus(previousStatus, e.getCode().getMessage());
+      session.restoreStatus(previousStatus, e.getClientMessage());
       autoTradingSessionRepository.saveAndFlush(session);
       throw e;
     }
@@ -150,7 +151,9 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
       }
       session.restoreStatus(previousStatus, aiMessage(response.getStatus(), response.getReason()));
       autoTradingSessionRepository.saveAndFlush(session);
-      throw new AutoTradingException(AutoTradingErrorCode.AI_STOP_REJECTED);
+      throw new AutoTradingException(
+          AutoTradingErrorCode.AI_STOP_REJECTED,
+          aiMessage(response.getStatus(), response.getReason()));
     }
 
     String message = aiMessage(response.getStatus(), response.getReason());
@@ -191,13 +194,33 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
 
   private void requirePaperAutoReadiness() {
     ServiceReadinessResponse readiness = aiServerClient.getServiceReadiness(bundleId);
-    if (readiness == null
-        || !"PASS".equalsIgnoreCase(readiness.getStatus())
-        || !readiness.getSafeToEnableOrderActions()
-        || readiness.getLiveTradingAllowed()
-        || readiness.getSafeToEnableLiveActions()) {
-      throw new AutoTradingException(AutoTradingErrorCode.READINESS_GATE_BLOCKED);
+    String reason = paperAutoReadinessBlockReason(readiness);
+    if (!reason.isBlank()) {
+      throw new AutoTradingException(AutoTradingErrorCode.READINESS_GATE_BLOCKED, reason);
     }
+  }
+
+  private static String paperAutoReadinessBlockReason(ServiceReadinessResponse readiness) {
+    if (readiness == null) {
+      return "AI 서비스 준비 상태를 확인할 수 없습니다.";
+    }
+    List<String> blockers = new java.util.ArrayList<>();
+    if (!"PASS".equalsIgnoreCase(readiness.getStatus())) {
+      blockers.add("status=" + readiness.getStatus());
+    }
+    if (!readiness.getSafeToEnableOrderActions()) {
+      blockers.add("order_actions_not_enabled");
+    }
+    if (readiness.getLiveTradingAllowed()) {
+      blockers.add("live_trading_allowed_true");
+    }
+    if (readiness.getSafeToEnableLiveActions()) {
+      blockers.add("live_actions_enabled");
+    }
+    if (blockers.isEmpty()) {
+      return "";
+    }
+    return "AI 주문 액션 게이트가 닫혀 있습니다. 사유: " + String.join(",", blockers);
   }
 
   private static String requireIdempotencyKey(String idempotencyKey) {

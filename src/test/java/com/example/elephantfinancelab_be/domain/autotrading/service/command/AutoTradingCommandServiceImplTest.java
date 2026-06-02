@@ -120,6 +120,8 @@ class AutoTradingCommandServiceImplTest {
     verify(sessionRepository, times(2)).saveAndFlush(sessionCaptor.capture());
     assertThat(sessionCaptor.getAllValues().getLast().getStatus())
         .isEqualTo(AutoTradingSessionStatus.FAILED);
+    assertThat(sessionCaptor.getAllValues().getLast().getAiStatusMessage())
+        .contains("AI 서버에 연결할 수 없습니다.");
   }
 
   @Test
@@ -141,13 +143,74 @@ class AutoTradingCommandServiceImplTest {
     assertThatThrownBy(() -> service.startSession(1L, "idempotency-1", request()))
         .isInstanceOf(AutoTradingException.class)
         .satisfies(
-            exception ->
-                assertThat(((AutoTradingException) exception).getCode())
-                    .isEqualTo(AutoTradingErrorCode.READINESS_GATE_BLOCKED));
+            exception -> {
+              assertThat(exception).hasMessageContaining("order_actions_not_enabled");
+              assertThat(((AutoTradingException) exception).getCode())
+                  .isEqualTo(AutoTradingErrorCode.READINESS_GATE_BLOCKED);
+            });
 
     verify(aiServerClient, never())
         .startPaperAutoTrading(anyString(), anyString(), any(), any(), any(), anyString());
     verify(sessionRepository, never()).saveAndFlush(any(AutoTradingSession.class));
+  }
+
+  @Test
+  void preservesAiRejectedStatusReasonInFailureMessage() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
+        .thenReturn(Optional.empty());
+    when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+        .thenReturn(List.of(selectedRecommendation(1L, "005930")));
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
+    when(aiServerClient.startPaperAutoTrading(
+            anyString(), anyString(), any(), any(), any(), anyString()))
+        .thenReturn(
+            StartPaperAutoTradingResponse.newBuilder()
+                .setAccepted(false)
+                .setStatus("PAPER_START_GATE_BLOCKED")
+                .setReason("broker_evidence_not_pass")
+                .build());
+
+    assertThatThrownBy(() -> service.startSession(1L, "idempotency-1", request()))
+        .isInstanceOf(AutoTradingException.class)
+        .hasMessageContaining("PAPER_START_GATE_BLOCKED: broker_evidence_not_pass");
+
+    ArgumentCaptor<AutoTradingSession> sessionCaptor =
+        ArgumentCaptor.forClass(AutoTradingSession.class);
+    verify(sessionRepository, times(2)).saveAndFlush(sessionCaptor.capture());
+    assertThat(sessionCaptor.getAllValues().getLast().getStatus())
+        .isEqualTo(AutoTradingSessionStatus.FAILED);
+    assertThat(sessionCaptor.getAllValues().getLast().getAiStatusMessage())
+        .isEqualTo("PAPER_START_GATE_BLOCKED: broker_evidence_not_pass");
+  }
+
+  @Test
+  void preservesGrpcAiDetailWhenStartThrowsAiServerException() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
+        .thenReturn(Optional.empty());
+    when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+        .thenReturn(List.of(selectedRecommendation(1L, "005930")));
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
+    when(aiServerClient.startPaperAutoTrading(
+            anyString(), anyString(), any(), any(), any(), anyString()))
+        .thenThrow(
+            new AiServerException(
+                AiServerErrorCode.AI412_01,
+                "FAILED_PRECONDITION",
+                "paper_candidate_registry_not_found"));
+
+    assertThatThrownBy(() -> service.startSession(1L, "idempotency-1", request()))
+        .isInstanceOf(AiServerException.class)
+        .hasMessageContaining("paper_candidate_registry_not_found");
+
+    ArgumentCaptor<AutoTradingSession> sessionCaptor =
+        ArgumentCaptor.forClass(AutoTradingSession.class);
+    verify(sessionRepository, times(2)).saveAndFlush(sessionCaptor.capture());
+    assertThat(sessionCaptor.getAllValues().getLast().getStatus())
+        .isEqualTo(AutoTradingSessionStatus.FAILED);
+    assertThat(sessionCaptor.getAllValues().getLast().getAiStatusMessage())
+        .contains("paper_candidate_registry_not_found");
   }
 
   @Test
