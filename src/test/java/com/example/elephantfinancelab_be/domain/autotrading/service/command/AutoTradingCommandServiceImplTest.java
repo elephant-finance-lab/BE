@@ -211,6 +211,46 @@ class AutoTradingCommandServiceImplTest {
   }
 
   @Test
+  void redactsAcceptedFalseStatusReasonBeforePersistingAndThrowing() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
+        .thenReturn(Optional.empty());
+    when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+        .thenReturn(List.of(selectedRecommendation(1L, "005930")));
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
+    when(aiServerClient.startPaperAutoTrading(
+            anyString(), anyString(), any(), any(), any(), anyString()))
+        .thenReturn(
+            StartPaperAutoTradingResponse.newBuilder()
+                .setAccepted(false)
+                .setStatus("PAPER_START_GATE_BLOCKED token=status-token")
+                .setReason(
+                    "broker_evidence_not_pass token=reason-token accountNumber=12345678 "
+                        + "/Users/jangjaewon/Desktop/Full_Part/Elephant_Lab/.env")
+                .build());
+
+    assertThatThrownBy(() -> service.startSession(1L, "idempotency-1", request()))
+        .isInstanceOf(AutoTradingException.class)
+        .hasMessageContaining("PAPER_START_GATE_BLOCKED token=<redacted>")
+        .hasMessageContaining("accountNumber=<redacted>")
+        .hasMessageContaining("<local-path-redacted>")
+        .hasMessageNotContaining("status-token")
+        .hasMessageNotContaining("reason-token")
+        .hasMessageNotContaining("12345678")
+        .hasMessageNotContaining("/Users/jangjaewon");
+
+    ArgumentCaptor<AutoTradingSession> sessionCaptor =
+        ArgumentCaptor.forClass(AutoTradingSession.class);
+    verify(sessionRepository, times(2)).saveAndFlush(sessionCaptor.capture());
+    String persistedMessage = sessionCaptor.getAllValues().getLast().getAiStatusMessage();
+    assertThat(persistedMessage).contains("token=<redacted>");
+    assertThat(persistedMessage).contains("accountNumber=<redacted>");
+    assertThat(persistedMessage).contains("<local-path-redacted>");
+    assertThat(persistedMessage)
+        .doesNotContain("status-token", "reason-token", "12345678", "/Users/jangjaewon");
+  }
+
+  @Test
   void preservesGrpcAiDetailWhenStartThrowsAiServerException() {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
@@ -237,6 +277,36 @@ class AutoTradingCommandServiceImplTest {
         .isEqualTo(AutoTradingSessionStatus.FAILED);
     assertThat(sessionCaptor.getAllValues().getLast().getAiStatusMessage())
         .contains("paper_candidate_registry_not_found");
+  }
+
+  @Test
+  void blocksPaperStartWhenReadinessIndicatesRegistryMutated() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
+        .thenReturn(Optional.empty());
+    when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+        .thenReturn(List.of(selectedRecommendation(1L, "005930")));
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST"))
+        .thenReturn(
+            ServiceReadinessResponse.newBuilder()
+                .setStatus("PASS")
+                .setSafeToEnableOrderActions(true)
+                .setLiveTradingAllowed(false)
+                .setRegistryMutated(true)
+                .setSafeToEnableLiveActions(false)
+                .build());
+
+    assertThatThrownBy(() -> service.startSession(1L, "idempotency-1", request()))
+        .isInstanceOf(AutoTradingException.class)
+        .hasMessageContaining("registry_mutated_true")
+        .satisfies(
+            exception ->
+                assertThat(((AutoTradingException) exception).getCode())
+                    .isEqualTo(AutoTradingErrorCode.READINESS_GATE_BLOCKED));
+
+    verify(aiServerClient, never())
+        .startPaperAutoTrading(anyString(), anyString(), any(), any(), any(), anyString());
+    verify(sessionRepository, never()).saveAndFlush(any(AutoTradingSession.class));
   }
 
   @Test

@@ -14,6 +14,7 @@ import com.example.elephantfinancelab_be.domain.autotrading.repository.AutoTradi
 import com.example.elephantfinancelab_be.domain.recommendation.entity.UserSelectedRecommendation;
 import com.example.elephantfinancelab_be.domain.recommendation.repository.UserSelectedRecommendationRepository;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.AiServerException;
+import com.example.elephantfinancelab_be.global.apiPayload.util.AiDetailSanitizer;
 import com.example.elephantfinancelab_be.global.config.AiServerClient;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -256,6 +257,9 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     if (readiness.getLiveTradingAllowed()) {
       blockers.add("live_trading_allowed_true");
     }
+    if (readiness.getRegistryMutated()) {
+      blockers.add("registry_mutated_true");
+    }
     if (readiness.getSafeToEnableLiveActions()) {
       blockers.add("live_actions_enabled");
     }
@@ -285,10 +289,15 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
   }
 
   private static String aiMessage(String status, String reason) {
-    if (reason == null || reason.isBlank()) {
-      return status;
+    String safeStatus = AiDetailSanitizer.sanitize(status);
+    String safeReason = AiDetailSanitizer.sanitize(reason);
+    if (safeStatus == null || safeStatus.isBlank()) {
+      safeStatus = "AI_RESPONSE";
     }
-    return status + ": " + reason;
+    if (safeReason == null || safeReason.isBlank()) {
+      return safeStatus;
+    }
+    return safeStatus + ": " + safeReason;
   }
 
   private static LocalDateTime parseDateTime(String raw) {
