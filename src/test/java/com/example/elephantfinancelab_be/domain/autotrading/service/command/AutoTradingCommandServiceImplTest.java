@@ -211,6 +211,7 @@ class AutoTradingCommandServiceImplTest {
         .thenReturn(
             ServiceReadinessResponse.newBuilder()
                 .setStatus("PASS")
+                .setBundleId("BUNDLE-TEST")
                 .setSafeToEnableOrderActions(false)
                 .setLiveTradingAllowed(false)
                 .setSafeToEnableLiveActions(false)
@@ -220,6 +221,66 @@ class AutoTradingCommandServiceImplTest {
 
     assertThat(result.isCanStartPaperAutoTrading()).isFalse();
     assertThat(result.getBlockedReason()).isEqualTo("order_actions_disabled");
+  }
+
+  @Test
+  void exposesBrokerEvidenceBlockedReadinessReason() {
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST"))
+        .thenReturn(
+            ServiceReadinessResponse.newBuilder()
+                .setStatus("PARTIAL")
+                .setBundleId("BUNDLE-TEST")
+                .setDeployQuality("PASS")
+                .setBrokerEvidence("BLOCKED")
+                .setSafeToEnableOrderActions(false)
+                .setLiveTradingAllowed(false)
+                .setSafeToEnableLiveActions(false)
+                .build());
+
+    AutoTradingResDTO.Readiness result = service.getReadiness();
+
+    assertThat(result.isCanStartPaperAutoTrading()).isFalse();
+    assertThat(result.getBlockedReason()).isEqualTo("broker_evidence_blocked");
+  }
+
+  @Test
+  void exposesDeployQualityBlockedReadinessReason() {
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST"))
+        .thenReturn(
+            ServiceReadinessResponse.newBuilder()
+                .setStatus("BLOCKED")
+                .setBundleId("BUNDLE-TEST")
+                .setDeployQuality("BLOCKED")
+                .setBrokerEvidence("PASS")
+                .setSafeToEnableOrderActions(false)
+                .setLiveTradingAllowed(false)
+                .setSafeToEnableLiveActions(false)
+                .build());
+
+    AutoTradingResDTO.Readiness result = service.getReadiness();
+
+    assertThat(result.isCanStartPaperAutoTrading()).isFalse();
+    assertThat(result.getBlockedReason()).isEqualTo("deploy_quality_blocked");
+  }
+
+  @Test
+  void exposesMissingPaperBundleReadinessReason() {
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST"))
+        .thenReturn(
+            ServiceReadinessResponse.newBuilder()
+                .setStatus("BLOCKED")
+                .setBundleId("")
+                .setDeployQuality("BLOCKED")
+                .setBrokerEvidence("BLOCKED")
+                .setSafeToEnableOrderActions(false)
+                .setLiveTradingAllowed(false)
+                .setSafeToEnableLiveActions(false)
+                .build());
+
+    AutoTradingResDTO.Readiness result = service.getReadiness();
+
+    assertThat(result.isCanStartPaperAutoTrading()).isFalse();
+    assertThat(result.getBlockedReason()).isEqualTo("paper_bundle_id_missing");
   }
 
   @Test

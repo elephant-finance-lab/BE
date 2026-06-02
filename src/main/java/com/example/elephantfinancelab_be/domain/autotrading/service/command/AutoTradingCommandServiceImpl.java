@@ -229,7 +229,16 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     if (readiness == null) {
       return "readiness_unavailable";
     }
+    if (readiness.getBundleId() == null || readiness.getBundleId().isBlank()) {
+      return "paper_bundle_id_missing";
+    }
     if (!"PASS".equalsIgnoreCase(readiness.getStatus())) {
+      if (!isPass(readiness.getDeployQuality())) {
+        return "deploy_quality_blocked";
+      }
+      if (!isPass(readiness.getBrokerEvidence())) {
+        return "broker_evidence_blocked";
+      }
       return "readiness_status_not_pass";
     }
     if (!readiness.getSafeToEnableOrderActions()) {
@@ -239,6 +248,10 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
       return "live_action_gate_enabled";
     }
     return "readiness_gate_blocked";
+  }
+
+  private static boolean isPass(String value) {
+    return "PASS".equalsIgnoreCase(value);
   }
 
   private static String requireIdempotencyKey(String idempotencyKey) {
