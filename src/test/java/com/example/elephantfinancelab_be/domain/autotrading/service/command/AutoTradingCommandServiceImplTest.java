@@ -125,6 +125,32 @@ class AutoTradingCommandServiceImplTest {
   }
 
   @Test
+  void preservesFailedSessionWhenReadinessGrpcCallFailsBeforeStart() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
+        .thenReturn(Optional.empty());
+    when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+        .thenReturn(List.of(selectedRecommendation(1L, "005930")));
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST"))
+        .thenThrow(
+            new AiServerException(
+                AiServerErrorCode.AI503_01, "UNAVAILABLE", "AI server unavailable"));
+
+    assertThatThrownBy(() -> service.startSession(1L, "idempotency-1", request()))
+        .isInstanceOf(AiServerException.class)
+        .hasMessageContaining("AI server unavailable");
+
+    ArgumentCaptor<AutoTradingSession> sessionCaptor =
+        ArgumentCaptor.forClass(AutoTradingSession.class);
+    verify(sessionRepository).saveAndFlush(sessionCaptor.capture());
+    assertThat(sessionCaptor.getValue().getStatus()).isEqualTo(AutoTradingSessionStatus.FAILED);
+    assertThat(sessionCaptor.getValue().getAiStatusMessage()).contains("AI server unavailable");
+    assertThat(sessionCaptor.getValue().getActiveSlot()).isNull();
+    verify(aiServerClient, never())
+        .startPaperAutoTrading(anyString(), anyString(), any(), any(), any(), anyString());
+  }
+
+  @Test
   void blocksStartBeforeAiCallWhenReadinessDisallowsOrderActions() {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());

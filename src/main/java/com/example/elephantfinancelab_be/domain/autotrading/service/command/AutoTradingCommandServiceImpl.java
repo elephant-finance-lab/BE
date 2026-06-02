@@ -63,9 +63,22 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     if (autoTradingSessionRepository.existsByActiveSlot(ACTIVE_SLOT)) {
       throw new AutoTradingException(AutoTradingErrorCode.ACTIVE_SESSION_EXISTS);
     }
-    requirePaperAutoReadiness();
 
     String aiRequestId = UUID.randomUUID().toString();
+    try {
+      requirePaperAutoReadiness();
+    } catch (AiServerException e) {
+      persistFailedStartAttempt(
+          userId,
+          normalizedKey,
+          recommendationIds,
+          tickers,
+          request,
+          aiRequestId,
+          e.getClientMessage());
+      throw e;
+    }
+
     AutoTradingSession session =
         AutoTradingSession.builder()
             .sessionId(UUID.randomUUID().toString())
@@ -117,6 +130,35 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
         aiMessage(response.getStatus(), response.getReason()),
         parseDateTime(response.getStartedAt()));
     return AutoTradingConverter.toSession(autoTradingSessionRepository.saveAndFlush(session));
+  }
+
+  private void persistFailedStartAttempt(
+      Long userId,
+      String normalizedKey,
+      List<Long> recommendationIds,
+      List<String> tickers,
+      AutoTradingReqDTO.StartSession request,
+      String aiRequestId,
+      String message) {
+    AutoTradingSession failedSession =
+        AutoTradingSession.builder()
+            .sessionId(UUID.randomUUID().toString())
+            .userId(userId)
+            .status(AutoTradingSessionStatus.STARTING)
+            .selectedTickers(String.join(",", tickers))
+            .recommendationIds(
+                recommendationIds.stream().map(String::valueOf).collect(Collectors.joining(",")))
+            .purchaseOptionId(request.getPurchaseOptionId())
+            .idempotencyKey(normalizedKey)
+            .aiRequestId(aiRequestId)
+            .activeSlot(ACTIVE_SLOT)
+            .build();
+    failedSession.markStartFailed(message);
+    try {
+      autoTradingSessionRepository.saveAndFlush(failedSession);
+    } catch (DataIntegrityViolationException ignored) {
+      // A concurrent idempotent request already recorded the attempt; preserve the AI error.
+    }
   }
 
   @Override

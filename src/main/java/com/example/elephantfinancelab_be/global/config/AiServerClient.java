@@ -20,6 +20,7 @@ import com.elephant.ai.v1.StopPaperAutoTradingRequest;
 import com.elephant.ai.v1.StopPaperAutoTradingResponse;
 import com.example.elephantfinancelab_be.global.apiPayload.code.AiServerErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.AiServerException;
+import com.example.elephantfinancelab_be.global.apiPayload.util.AiDetailSanitizer;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import java.util.List;
@@ -48,7 +49,7 @@ public class AiServerClient {
     return stub.withDeadlineAfter(timeout, TimeUnit.SECONDS);
   }
 
-  private AiServerException mapToAiServerException(StatusRuntimeException e) {
+  AiServerException mapToAiServerException(StatusRuntimeException e) {
     String detail = sanitizeAiDetail(e.getStatus().getDescription());
     log.error(
         "[AI Client] gRPC 오류 - status: {}, detail: {}",
@@ -80,19 +81,7 @@ public class AiServerClient {
   }
 
   static String sanitizeAiDetail(String raw) {
-    if (raw == null || raw.isBlank()) {
-      return null;
-    }
-    String sanitized = raw.strip();
-    sanitized = sanitized.replaceAll("(?i)(bearer)\\s+[A-Za-z0-9._~+/=-]+", "$1 <redacted>");
-    sanitized =
-        sanitized.replaceAll(
-            "(?i)(app[_-]?key|app[_-]?secret|authorization|token|password|secret|account|confirm[_-]?phrase)\\s*[:=]\\s*[^,\\s]+",
-            "$1=<redacted>");
-    if (sanitized.length() > 500) {
-      return sanitized.substring(0, 500) + "...";
-    }
-    return sanitized;
+    return AiDetailSanitizer.sanitize(raw);
   }
 
   public HealthCheckResponse healthCheck(String bundleId) {
