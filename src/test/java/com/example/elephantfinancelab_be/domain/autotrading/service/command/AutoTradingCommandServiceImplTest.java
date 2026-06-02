@@ -177,7 +177,12 @@ class AutoTradingCommandServiceImplTest {
 
     verify(aiServerClient, never())
         .startPaperAutoTrading(anyString(), anyString(), any(), any(), any(), anyString());
-    verify(sessionRepository, never()).saveAndFlush(any(AutoTradingSession.class));
+    ArgumentCaptor<AutoTradingSession> sessionCaptor =
+        ArgumentCaptor.forClass(AutoTradingSession.class);
+    verify(sessionRepository).saveAndFlush(sessionCaptor.capture());
+    assertThat(sessionCaptor.getValue().getStatus()).isEqualTo(AutoTradingSessionStatus.FAILED);
+    assertThat(sessionCaptor.getValue().getAiStatusMessage()).contains("order_actions_not_enabled");
+    assertThat(sessionCaptor.getValue().getActiveSlot()).isNull();
   }
 
   @Test
@@ -306,7 +311,12 @@ class AutoTradingCommandServiceImplTest {
 
     verify(aiServerClient, never())
         .startPaperAutoTrading(anyString(), anyString(), any(), any(), any(), anyString());
-    verify(sessionRepository, never()).saveAndFlush(any(AutoTradingSession.class));
+    ArgumentCaptor<AutoTradingSession> sessionCaptor =
+        ArgumentCaptor.forClass(AutoTradingSession.class);
+    verify(sessionRepository).saveAndFlush(sessionCaptor.capture());
+    assertThat(sessionCaptor.getValue().getStatus()).isEqualTo(AutoTradingSessionStatus.FAILED);
+    assertThat(sessionCaptor.getValue().getAiStatusMessage()).contains("registry_mutated_true");
+    assertThat(sessionCaptor.getValue().getActiveSlot()).isNull();
   }
 
   @Test

@@ -13,7 +13,9 @@ class AiServerClientTest {
   void sanitizeAiDetailRedactsSecretsAndCapsLength() {
     String raw =
         "PAPER_START_GATE_BLOCKED token=abc123 app_secret=supersecret "
-            + "Authorization=Bearer-secret account=12345678 reason=broker_evidence_not_pass";
+            + "Authorization=Bearer-secret account=12345678 reason=broker_evidence_not_pass "
+            + "payload="
+            + "x".repeat(600);
 
     String sanitized = AiServerClient.sanitizeAiDetail(raw);
 
@@ -23,6 +25,8 @@ class AiServerClientTest {
     assertThat(sanitized).contains("Authorization=<redacted>");
     assertThat(sanitized).contains("account=<redacted>");
     assertThat(sanitized).doesNotContain("abc123", "supersecret", "12345678");
+    assertThat(sanitized).hasSizeLessThanOrEqualTo(503);
+    assertThat(sanitized).endsWith("...");
   }
 
   @Test
@@ -30,7 +34,10 @@ class AiServerClientTest {
     String raw =
         "{\"token\":\"json-token\",\"api_key\":\"json-api-key\"} "
             + "accountNumber='12345678' accountNo=87654321 "
-            + "path=/Users/jangjaewon/Desktop/Full_Part/Elephant_Lab/.env";
+            + "path=/Users/jangjaewon/Desktop/Full_Part/Elephant_Lab/.env "
+            + "linux=/home/ubuntu/app/.env "
+            + "windows=C:\\Users\\jaewon\\secret\\.env "
+            + "unc=\\\\server\\share\\secret\\.env";
 
     String sanitized = AiServerClient.sanitizeAiDetail(raw);
 
@@ -40,7 +47,15 @@ class AiServerClientTest {
     assertThat(sanitized).contains("accountNo=<redacted>");
     assertThat(sanitized).contains("<local-path-redacted>");
     assertThat(sanitized)
-        .doesNotContain("json-token", "json-api-key", "12345678", "87654321", "/Users/jangjaewon");
+        .doesNotContain(
+            "json-token",
+            "json-api-key",
+            "12345678",
+            "87654321",
+            "/Users/jangjaewon",
+            "/home/ubuntu",
+            "C:\\Users\\jaewon",
+            "\\\\server\\share");
   }
 
   @Test

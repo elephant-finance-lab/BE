@@ -18,7 +18,12 @@ public final class AiDetailSanitizer {
         sanitized.replaceAll(
             "(?i)(app[_-]?key|app[_-]?secret|api[_-]?key|authorization|token|password|secret|account(?:[_-]?(?:number|no))?|confirm[_-]?phrase)\\s*[:=]\\s*(\"[^\"]*\"|'[^']*'|[^,\\s}]+)",
             "$1=<redacted>");
-    sanitized = sanitized.replaceAll("/Users/[^\\s,}\\]]+", "<local-path-redacted>");
+    sanitized = sanitized.replaceAll("/(?:Users|home)/[^\\s,}\\]]+", "<local-path-redacted>");
+    sanitized = sanitized.replaceAll("[A-Za-z]:\\\\[^\\s,}\\]]+", "<local-path-redacted>");
+    sanitized =
+        sanitized.replaceAll(
+            "\\\\{2}[^\\\\\\s,}\\]]+\\\\[^\\\\\\s,}\\]]+(?:\\\\[^\\\\\\s,}\\]]+)+",
+            "<local-path-redacted>");
     if (sanitized.length() > 500) {
       return sanitized.substring(0, 500) + "...";
     }

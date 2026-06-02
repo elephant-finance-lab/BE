@@ -32,9 +32,7 @@ public class GeneralExceptionAdvice {
         ex.getClientMessage());
     log.debug("GeneralException detail", ex);
     return ResponseEntity.status(ex.getCode().getStatus())
-        .body(
-            new ApiResponse<>(
-                false, ex.getCode().getCode(), safeMessage(ex.getClientMessage(), ex), null));
+        .body(new ApiResponse<>(false, ex.getCode().getCode(), ex.getClientMessage(), null));
   }
 
   @ExceptionHandler(AiServerException.class)
@@ -47,21 +45,7 @@ public class GeneralExceptionAdvice {
         ex.getAiDetail());
     log.debug("AiServerException detail", ex);
     return ResponseEntity.status(ex.getCode().getStatus())
-        .body(
-            new ApiResponse<>(
-                false, ex.getCode().getCode(), safeMessage(ex.getClientMessage(), ex), null));
-  }
-
-  private static String safeMessage(String clientMessage, RuntimeException ex) {
-    if (clientMessage == null || clientMessage.isBlank()) {
-      if (ex instanceof GeneralException generalException) {
-        return generalException.getCode().getMessage();
-      }
-      if (ex instanceof AiServerException aiServerException) {
-        return aiServerException.getCode().getMessage();
-      }
-    }
-    return clientMessage;
+        .body(new ApiResponse<>(false, ex.getCode().getCode(), ex.getClientMessage(), null));
   }
 
   @ExceptionHandler(DataIntegrityViolationException.class)

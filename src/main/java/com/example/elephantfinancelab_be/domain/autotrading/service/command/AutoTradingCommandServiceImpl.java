@@ -78,6 +78,16 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
           aiRequestId,
           e.getClientMessage());
       throw e;
+    } catch (AutoTradingException e) {
+      persistFailedStartAttempt(
+          userId,
+          normalizedKey,
+          recommendationIds,
+          tickers,
+          request,
+          aiRequestId,
+          e.getClientMessage());
+      throw e;
     }
 
     AutoTradingSession session =
@@ -188,15 +198,14 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     }
 
     if (!response.getAccepted()) {
+      String message = aiMessage(response.getStatus(), response.getReason());
       if ("NOT_RUNNING".equalsIgnoreCase(response.getStatus())) {
-        session.markStopped(aiMessage(response.getStatus(), response.getReason()));
+        session.markStopped(message);
         return AutoTradingConverter.toSession(autoTradingSessionRepository.saveAndFlush(session));
       }
-      session.restoreStatus(previousStatus, aiMessage(response.getStatus(), response.getReason()));
+      session.restoreStatus(previousStatus, message);
       autoTradingSessionRepository.saveAndFlush(session);
-      throw new AutoTradingException(
-          AutoTradingErrorCode.AI_STOP_REJECTED,
-          aiMessage(response.getStatus(), response.getReason()));
+      throw new AutoTradingException(AutoTradingErrorCode.AI_STOP_REJECTED, message);
     }
 
     String message = aiMessage(response.getStatus(), response.getReason());
