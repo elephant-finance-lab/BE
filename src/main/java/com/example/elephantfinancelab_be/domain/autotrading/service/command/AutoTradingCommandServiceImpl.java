@@ -14,6 +14,7 @@ import com.example.elephantfinancelab_be.domain.autotrading.repository.AutoTradi
 import com.example.elephantfinancelab_be.domain.recommendation.entity.UserSelectedRecommendation;
 import com.example.elephantfinancelab_be.domain.recommendation.repository.UserSelectedRecommendationRepository;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.AiServerException;
+import com.example.elephantfinancelab_be.global.apiPayload.util.AiDetailSanitizer;
 import com.example.elephantfinancelab_be.global.config.AiServerClient;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -63,9 +64,32 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     if (autoTradingSessionRepository.existsByActiveSlot(ACTIVE_SLOT)) {
       throw new AutoTradingException(AutoTradingErrorCode.ACTIVE_SESSION_EXISTS);
     }
-    requirePaperAutoReadiness();
 
     String aiRequestId = UUID.randomUUID().toString();
+    try {
+      requirePaperAutoReadiness();
+    } catch (AiServerException e) {
+      persistFailedStartAttempt(
+          userId,
+          normalizedKey,
+          recommendationIds,
+          tickers,
+          request,
+          aiRequestId,
+          e.getClientMessage());
+      throw e;
+    } catch (AutoTradingException e) {
+      persistFailedStartAttempt(
+          userId,
+          normalizedKey,
+          recommendationIds,
+          tickers,
+          request,
+          aiRequestId,
+          e.getClientMessage());
+      throw e;
+    }
+
     AutoTradingSession session =
         AutoTradingSession.builder()
             .sessionId(UUID.randomUUID().toString())
@@ -100,15 +124,16 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
               tickers,
               confirmPhrase);
     } catch (AiServerException e) {
-      session.markStartFailed(e.getCode().getMessage());
+      session.markStartFailed(e.getClientMessage());
       autoTradingSessionRepository.saveAndFlush(session);
       throw e;
     }
 
     if (!response.getAccepted()) {
-      session.markStartFailed(aiMessage(response.getStatus(), response.getReason()));
+      String message = aiMessage(response.getStatus(), response.getReason());
+      session.markStartFailed(message);
       autoTradingSessionRepository.saveAndFlush(session);
-      throw new AutoTradingException(AutoTradingErrorCode.AI_START_REJECTED);
+      throw new AutoTradingException(AutoTradingErrorCode.AI_START_REJECTED, message);
     }
 
     session.markRunning(
@@ -116,6 +141,35 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
         aiMessage(response.getStatus(), response.getReason()),
         parseDateTime(response.getStartedAt()));
     return AutoTradingConverter.toSession(autoTradingSessionRepository.saveAndFlush(session));
+  }
+
+  private void persistFailedStartAttempt(
+      Long userId,
+      String normalizedKey,
+      List<Long> recommendationIds,
+      List<String> tickers,
+      AutoTradingReqDTO.StartSession request,
+      String aiRequestId,
+      String message) {
+    AutoTradingSession failedSession =
+        AutoTradingSession.builder()
+            .sessionId(UUID.randomUUID().toString())
+            .userId(userId)
+            .status(AutoTradingSessionStatus.STARTING)
+            .selectedTickers(String.join(",", tickers))
+            .recommendationIds(
+                recommendationIds.stream().map(String::valueOf).collect(Collectors.joining(",")))
+            .purchaseOptionId(request.getPurchaseOptionId())
+            .idempotencyKey(normalizedKey)
+            .aiRequestId(aiRequestId)
+            .activeSlot(ACTIVE_SLOT)
+            .build();
+    failedSession.markStartFailed(message);
+    try {
+      autoTradingSessionRepository.saveAndFlush(failedSession);
+    } catch (DataIntegrityViolationException ignored) {
+      // A concurrent idempotent request already recorded the attempt; preserve the AI error.
+    }
   }
 
   @Override
@@ -138,19 +192,20 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
           aiServerClient.stopPaperAutoTrading(
               UUID.randomUUID().toString(), session.getAiSessionId());
     } catch (AiServerException e) {
-      session.restoreStatus(previousStatus, e.getCode().getMessage());
+      session.restoreStatus(previousStatus, e.getClientMessage());
       autoTradingSessionRepository.saveAndFlush(session);
       throw e;
     }
 
     if (!response.getAccepted()) {
+      String message = aiMessage(response.getStatus(), response.getReason());
       if ("NOT_RUNNING".equalsIgnoreCase(response.getStatus())) {
-        session.markStopped(aiMessage(response.getStatus(), response.getReason()));
+        session.markStopped(message);
         return AutoTradingConverter.toSession(autoTradingSessionRepository.saveAndFlush(session));
       }
-      session.restoreStatus(previousStatus, aiMessage(response.getStatus(), response.getReason()));
+      session.restoreStatus(previousStatus, message);
       autoTradingSessionRepository.saveAndFlush(session);
-      throw new AutoTradingException(AutoTradingErrorCode.AI_STOP_REJECTED);
+      throw new AutoTradingException(AutoTradingErrorCode.AI_STOP_REJECTED, message);
     }
 
     String message = aiMessage(response.getStatus(), response.getReason());
@@ -212,8 +267,9 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
 
   private void requirePaperAutoReadiness() {
     ServiceReadinessResponse readiness = aiServerClient.getServiceReadiness(bundleId);
-    if (!isPaperAutoReady(readiness)) {
-      throw new AutoTradingException(AutoTradingErrorCode.READINESS_GATE_BLOCKED);
+    String reason = paperAutoReadinessBlockReason(readiness);
+    if (!reason.isBlank()) {
+      throw new AutoTradingException(AutoTradingErrorCode.READINESS_GATE_BLOCKED, reason);
     }
   }
 
@@ -222,7 +278,34 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
         && "PASS".equalsIgnoreCase(readiness.getStatus())
         && readiness.getSafeToEnableOrderActions()
         && !readiness.getLiveTradingAllowed()
+        && !readiness.getRegistryMutated()
         && !readiness.getSafeToEnableLiveActions();
+  }
+
+  private static String paperAutoReadinessBlockReason(ServiceReadinessResponse readiness) {
+    if (readiness == null) {
+      return "AI 서비스 준비 상태를 확인할 수 없습니다.";
+    }
+    List<String> blockers = new java.util.ArrayList<>();
+    if (!"PASS".equalsIgnoreCase(readiness.getStatus())) {
+      blockers.add("status=" + readiness.getStatus());
+    }
+    if (!readiness.getSafeToEnableOrderActions()) {
+      blockers.add("order_actions_not_enabled");
+    }
+    if (readiness.getLiveTradingAllowed()) {
+      blockers.add("live_trading_allowed_true");
+    }
+    if (readiness.getRegistryMutated()) {
+      blockers.add("registry_mutated_true");
+    }
+    if (readiness.getSafeToEnableLiveActions()) {
+      blockers.add("live_actions_enabled");
+    }
+    if (blockers.isEmpty()) {
+      return "";
+    }
+    return "AI 주문 액션 게이트가 닫혀 있습니다. 사유: " + String.join(",", blockers);
   }
 
   private static String paperAutoBlockedReason(ServiceReadinessResponse readiness) {
@@ -243,6 +326,9 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     }
     if (!readiness.getSafeToEnableOrderActions()) {
       return "order_actions_disabled";
+    }
+    if (readiness.getRegistryMutated()) {
+      return "registry_mutated";
     }
     if (readiness.getLiveTradingAllowed() || readiness.getSafeToEnableLiveActions()) {
       return "live_action_gate_enabled";
@@ -274,10 +360,15 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
   }
 
   private static String aiMessage(String status, String reason) {
-    if (reason == null || reason.isBlank()) {
-      return status;
+    String safeStatus = AiDetailSanitizer.sanitize(status);
+    String safeReason = AiDetailSanitizer.sanitize(reason);
+    if (safeStatus == null || safeStatus.isBlank()) {
+      safeStatus = "AI_RESPONSE";
     }
-    return status + ": " + reason;
+    if (safeReason == null || safeReason.isBlank()) {
+      return safeStatus;
+    }
+    return safeStatus + ": " + safeReason;
   }
 
   private static LocalDateTime parseDateTime(String raw) {

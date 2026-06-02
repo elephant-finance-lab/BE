@@ -29,18 +29,23 @@ public class GeneralExceptionAdvice {
         "code={}, message={}, detail={}",
         ex.getCode().getCode(),
         ex.getCode().getMessage(),
-        ex.getMessage());
+        ex.getClientMessage());
     log.debug("GeneralException detail", ex);
     return ResponseEntity.status(ex.getCode().getStatus())
-        .body(ApiResponse.onFailure(ex.getCode(), null));
+        .body(new ApiResponse<>(false, ex.getCode().getCode(), ex.getClientMessage(), null));
   }
 
   @ExceptionHandler(AiServerException.class)
   public ResponseEntity<ApiResponse<Void>> handleAiServerException(AiServerException ex) {
-    log.warn("code={}, message={}", ex.getCode().getCode(), ex.getCode().getMessage());
+    log.warn(
+        "code={}, message={}, grpcStatus={}, aiDetail={}",
+        ex.getCode().getCode(),
+        ex.getClientMessage(),
+        ex.getGrpcStatusCode(),
+        ex.getAiDetail());
     log.debug("AiServerException detail", ex);
     return ResponseEntity.status(ex.getCode().getStatus())
-        .body(ApiResponse.onFailure(ex.getCode(), null));
+        .body(new ApiResponse<>(false, ex.getCode().getCode(), ex.getClientMessage(), null));
   }
 
   @ExceptionHandler(DataIntegrityViolationException.class)

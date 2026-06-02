@@ -8,4 +8,8 @@ public class AutoTradingException extends GeneralException {
   public AutoTradingException(BaseErrorCode code) {
     super(code);
   }
+
+  public AutoTradingException(BaseErrorCode code, String clientMessage) {
+    super(code, clientMessage);
+  }
 }

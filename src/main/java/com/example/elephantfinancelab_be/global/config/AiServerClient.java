@@ -20,6 +20,7 @@ import com.elephant.ai.v1.StopPaperAutoTradingRequest;
 import com.elephant.ai.v1.StopPaperAutoTradingResponse;
 import com.example.elephantfinancelab_be.global.apiPayload.code.AiServerErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.AiServerException;
+import com.example.elephantfinancelab_be.global.apiPayload.util.AiDetailSanitizer;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import java.util.List;
@@ -28,6 +29,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -39,6 +41,7 @@ public class AiServerClient {
   private final int timeout;
   private final int recommendationsTimeout;
 
+  @Autowired
   public AiServerClient(
       AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stub,
       @Value("${ai.server.timeout}") int timeout,
@@ -46,6 +49,10 @@ public class AiServerClient {
     this.stub = stub;
     this.timeout = timeout;
     this.recommendationsTimeout = recommendationsTimeout > 0 ? recommendationsTimeout : timeout;
+  }
+
+  AiServerClient(AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stub, int timeout) {
+    this(stub, timeout, 0);
   }
 
   private AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stubWithDeadline() {
@@ -84,44 +91,61 @@ public class AiServerClient {
         });
   }
 
+  AiServerException mapToAiServerException(StatusRuntimeException e) {
+    return mapToAiServerException(e, "grpc-call", timeout, 0);
+  }
+
   private AiServerException mapToAiServerException(
       StatusRuntimeException e, String operation, int timeoutSeconds, long elapsedMs) {
     Status.Code code = e.getStatus().getCode();
+    String detail = sanitizeAiDetail(e.getStatus().getDescription());
+    String grpcStatusCode = code.name();
     if (code == Status.Code.DEADLINE_EXCEEDED || code == Status.Code.CANCELLED) {
       log.warn(
-          "[AI Client] gRPC deadline/cancel operation={}, status={}, timeoutSeconds={}, elapsedMs={}, message={}",
+          "[AI Client] gRPC deadline/cancel operation={}, status={}, timeoutSeconds={}, elapsedMs={}, detail={}",
           operation,
           code,
           timeoutSeconds,
           elapsedMs,
-          e.getMessage());
+          detail == null ? "" : detail);
     } else {
       log.error(
-          "[AI Client] gRPC error operation={}, status={}, timeoutSeconds={}, elapsedMs={}, message={}",
+          "[AI Client] gRPC error operation={}, status={}, timeoutSeconds={}, elapsedMs={}, detail={}",
           operation,
           code,
           timeoutSeconds,
           elapsedMs,
-          e.getMessage());
+          detail == null ? "" : detail);
     }
     return switch (code) {
-      case INVALID_ARGUMENT -> new AiServerException(AiServerErrorCode.AI400_01);
-      case DEADLINE_EXCEEDED -> new AiServerException(AiServerErrorCode.AI504_01);
-      case UNAUTHENTICATED -> new AiServerException(AiServerErrorCode.AI401_01);
-      case PERMISSION_DENIED -> new AiServerException(AiServerErrorCode.AI403_01);
-      case NOT_FOUND -> new AiServerException(AiServerErrorCode.AI404_01);
-      case INTERNAL -> new AiServerException(AiServerErrorCode.AI500_01);
-      case UNAVAILABLE -> new AiServerException(AiServerErrorCode.AI503_01);
-      case RESOURCE_EXHAUSTED -> new AiServerException(AiServerErrorCode.AI429_01);
-      case UNIMPLEMENTED -> new AiServerException(AiServerErrorCode.AI501_01);
-      case CANCELLED -> new AiServerException(AiServerErrorCode.AI400_02);
-      case FAILED_PRECONDITION -> new AiServerException(AiServerErrorCode.AI400_01);
-      default -> new AiServerException(AiServerErrorCode.AI503_01);
+      case INVALID_ARGUMENT ->
+          new AiServerException(AiServerErrorCode.AI400_01, grpcStatusCode, detail);
+      case DEADLINE_EXCEEDED ->
+          new AiServerException(AiServerErrorCode.AI504_01, grpcStatusCode, detail);
+      case UNAUTHENTICATED ->
+          new AiServerException(AiServerErrorCode.AI401_01, grpcStatusCode, detail);
+      case PERMISSION_DENIED ->
+          new AiServerException(AiServerErrorCode.AI403_01, grpcStatusCode, detail);
+      case NOT_FOUND -> new AiServerException(AiServerErrorCode.AI404_01, grpcStatusCode, detail);
+      case INTERNAL -> new AiServerException(AiServerErrorCode.AI500_01, grpcStatusCode, detail);
+      case UNAVAILABLE -> new AiServerException(AiServerErrorCode.AI503_01, grpcStatusCode, detail);
+      case RESOURCE_EXHAUSTED ->
+          new AiServerException(AiServerErrorCode.AI429_01, grpcStatusCode, detail);
+      case UNIMPLEMENTED ->
+          new AiServerException(AiServerErrorCode.AI501_01, grpcStatusCode, detail);
+      case CANCELLED -> new AiServerException(AiServerErrorCode.AI400_02, grpcStatusCode, detail);
+      case FAILED_PRECONDITION ->
+          new AiServerException(AiServerErrorCode.AI412_01, grpcStatusCode, detail);
+      default -> new AiServerException(AiServerErrorCode.AI503_01, grpcStatusCode, detail);
     };
   }
 
   private static long elapsedMillis(long startedAt) {
     return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+  }
+
+  static String sanitizeAiDetail(String raw) {
+    return AiDetailSanitizer.sanitize(raw);
   }
 
   public HealthCheckResponse healthCheck(String bundleId) {
