@@ -44,7 +44,7 @@ public class RecommendationRefreshScheduler {
   @Value("${ai.recommendations.refresh.market-holidays:}")
   private String marketHolidays;
 
-  private ParsedMarketSchedule parsedMarketSchedule;
+  private volatile ParsedMarketSchedule parsedMarketSchedule;
 
   @Autowired
   public RecommendationRefreshScheduler(RecommendationQueryService recommendationQueryService) {

@@ -9,6 +9,11 @@ public class PortfolioException extends GeneralException {
     super(code);
   }
 
+  public PortfolioException(BaseErrorCode code, Throwable cause) {
+    super(code);
+    initCause(cause);
+  }
+
   @Override
   public String getMessage() {
     return getCode().getMessage();

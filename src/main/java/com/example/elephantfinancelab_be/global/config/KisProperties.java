@@ -30,6 +30,10 @@ public class KisProperties {
   private String financialAppSecret;
   private String financialBaseUrl;
   private boolean websocketEnabled = true;
+  private String accountNumber;
+  private String accountProductCode;
+  private String cano;
+  private String acntPrdtCd;
 
   public String getBaseUrl() {
     return hasText(baseUrl) ? baseUrl : mode.baseUrl();
@@ -49,6 +53,45 @@ public class KisProperties {
 
   public String getFinancialBaseUrlOrDefault() {
     return hasText(financialBaseUrl) ? financialBaseUrl : getBaseUrl();
+  }
+
+  public String getCanoOrDefault() {
+    if (hasText(cano)) {
+      return cano.trim();
+    }
+    String normalizedAccountNumber = normalizedAccountNumber();
+    if (normalizedAccountNumber.length() >= 8) {
+      return normalizedAccountNumber.substring(0, 8);
+    }
+    return "";
+  }
+
+  public String getAcntPrdtCdOrDefault() {
+    if (hasText(acntPrdtCd)) {
+      return acntPrdtCd.trim();
+    }
+    if (hasText(accountProductCode)) {
+      return accountProductCode.trim();
+    }
+    String normalizedAccountNumber = normalizedAccountNumber();
+    if (normalizedAccountNumber.length() >= 10) {
+      return normalizedAccountNumber.substring(8, 10);
+    }
+    return "";
+  }
+
+  public boolean hasAccount() {
+    return hasText(getCanoOrDefault()) && hasText(getAcntPrdtCdOrDefault());
+  }
+
+  public String maskedAccount() {
+    String resolvedCano = getCanoOrDefault();
+    String resolvedProductCode = getAcntPrdtCdOrDefault();
+    if (!hasText(resolvedCano) || !hasText(resolvedProductCode)) {
+      return "not-configured";
+    }
+    String prefix = resolvedCano.length() <= 2 ? "**" : resolvedCano.substring(0, 2);
+    return prefix + "******-" + resolvedProductCode;
   }
 
   @PostConstruct
@@ -83,6 +126,13 @@ public class KisProperties {
 
   private boolean hasText(String value) {
     return value != null && !value.isBlank();
+  }
+
+  private String normalizedAccountNumber() {
+    if (!hasText(accountNumber)) {
+      return "";
+    }
+    return accountNumber.trim().replaceAll("[^0-9]", "");
   }
 
   public enum Mode {
