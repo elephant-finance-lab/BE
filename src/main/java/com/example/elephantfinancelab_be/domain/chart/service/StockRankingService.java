@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -49,13 +50,15 @@ public class StockRankingService {
   }
 
   private RankingResDTO.RankingResponse findCachedRanking(RankingType type) {
-    String json = stringRedisTemplate.opsForValue().get(type.getRedisKey());
-    if (json == null || json.isBlank()) {
-      return null;
-    }
-
     try {
+      String json = stringRedisTemplate.opsForValue().get(type.getRedisKey());
+      if (json == null || json.isBlank()) {
+        return null;
+      }
       return objectMapper.readValue(json, RankingResDTO.RankingResponse.class);
+    } catch (DataAccessException e) {
+      log.warn("ranking redis unavailable: key={}", type.getRedisKey(), e);
+      return null;
     } catch (JsonProcessingException e) {
       log.warn(
           "code={}, message={}, key={}",
@@ -72,8 +75,15 @@ public class StockRankingService {
       String json = objectMapper.writeValueAsString(response);
       stringRedisTemplate.opsForValue().set(type.getRedisKey(), json, CACHE_TTL);
       log.info("종목 랭킹 캐시 저장 완료. key={}, ttlSeconds={}", type.getRedisKey(), CACHE_TTL.toSeconds());
+    } catch (DataAccessException e) {
+      log.warn("ranking redis save skipped: key={}", type.getRedisKey(), e);
     } catch (JsonProcessingException e) {
-      throw new ChartException(ChartErrorCode.RANKING_CACHE_SERIALIZE_FAILED, e);
+      log.warn(
+          "code={}, message={}, key={}",
+          ChartErrorCode.RANKING_CACHE_SERIALIZE_FAILED.getCode(),
+          ChartErrorCode.RANKING_CACHE_SERIALIZE_FAILED.getMessage(),
+          type.getRedisKey(),
+          e);
     }
   }
 }

@@ -27,7 +27,7 @@ public class AutoTradingReqDTO {
     private Integer cycles;
 
     @NotNull
-    @Min(1)
+    @Min(60)
     private Integer intervalSec;
   }
 }

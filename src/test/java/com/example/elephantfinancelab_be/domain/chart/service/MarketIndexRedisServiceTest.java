@@ -3,6 +3,7 @@ package com.example.elephantfinancelab_be.domain.chart.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -18,6 +19,7 @@ import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
@@ -111,5 +113,36 @@ class MarketIndexRedisServiceTest {
 
     assertThat(result.kospi()).isEqualTo(kospi);
     assertThat(result.kosdaq()).isNull();
+  }
+
+  @Test
+  void findLatestMarketIndexesReturnsNullWhenRedisUnavailable() {
+    when(valueOperations.get(MarketIndexMarket.KOSPI.getRedisKey()))
+        .thenThrow(new RedisConnectionFailureException("redis down"));
+    when(valueOperations.get(MarketIndexMarket.KOSDAQ.getRedisKey()))
+        .thenThrow(new RedisConnectionFailureException("redis down"));
+
+    MarketIndexResDTO.MarketIndexes result = service.findLatestMarketIndexes();
+
+    assertThat(result.kospi()).isNull();
+    assertThat(result.kosdaq()).isNull();
+  }
+
+  @Test
+  void saveReturnsFalseWhenRedisUnavailable() {
+    MarketIndexResDTO.MarketIndex index =
+        new MarketIndexResDTO.MarketIndex(
+            "KOSPI",
+            new BigDecimal("2735.24"),
+            new BigDecimal("12.31"),
+            new BigDecimal("0.45"),
+            TIMESTAMP);
+    doThrow(new RedisConnectionFailureException("redis down"))
+        .when(valueOperations)
+        .set(eq(MarketIndexMarket.KOSPI.getRedisKey()), anyString());
+
+    boolean saved = service.save(MarketIndexMarket.KOSPI, index);
+
+    assertThat(saved).isFalse();
   }
 }
