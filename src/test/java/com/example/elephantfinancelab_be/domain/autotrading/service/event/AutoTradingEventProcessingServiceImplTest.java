@@ -105,6 +105,27 @@ class AutoTradingEventProcessingServiceImplTest {
   }
 
   @Test
+  void schedulerAuditEventIsPersistedWithoutUserNotification() {
+    AutoTradingSession session =
+        AutoTradingSession.builder()
+            .sessionId("be-session-audit")
+            .userId(1L)
+            .aiSessionId("ai-session-audit")
+            .status(AutoTradingSessionStatus.RUNNING)
+            .build();
+    AutoTradingKafkaEvent event = event(AutoTradingEventType.SCHEDULER_AUDIT, "ai-session-audit");
+    when(parser.parse("ai-session-audit", "{}")).thenReturn(event);
+    when(sessionRepository.findFirstByAiSessionIdOrderByCreatedAtDesc("ai-session-audit"))
+        .thenReturn(Optional.of(session));
+
+    Optional<NotificationDispatch> result = service.process("ai-session-audit", "{}");
+
+    assertThat(result).isEmpty();
+    verify(eventRepository).saveAndFlush(any(AutoTradingEvent.class));
+    verify(notificationCommandService, never()).create(any(), any(), any(), any(), any(), any());
+  }
+
+  @Test
   void matchesStartedEventUsingAiRequestIdAndStoresCorrelation() {
     AutoTradingSession session =
         AutoTradingSession.builder()

@@ -1,5 +1,6 @@
 package com.example.elephantfinancelab_be.domain.autotrading.service.command;
 
+import com.elephant.ai.v1.PaperAutoTradingStatusResponse;
 import com.elephant.ai.v1.ServiceReadinessResponse;
 import com.elephant.ai.v1.StartPaperAutoTradingResponse;
 import com.elephant.ai.v1.StopPaperAutoTradingResponse;
@@ -13,6 +14,7 @@ import com.example.elephantfinancelab_be.domain.autotrading.exception.code.AutoT
 import com.example.elephantfinancelab_be.domain.autotrading.repository.AutoTradingSessionRepository;
 import com.example.elephantfinancelab_be.domain.recommendation.entity.UserSelectedRecommendation;
 import com.example.elephantfinancelab_be.domain.recommendation.repository.UserSelectedRecommendationRepository;
+import com.example.elephantfinancelab_be.global.apiPayload.code.AiServerErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.AiServerException;
 import com.example.elephantfinancelab_be.global.apiPayload.util.AiDetailSanitizer;
 import com.example.elephantfinancelab_be.global.config.AiServerClient;
@@ -48,6 +50,72 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
   @Override
   public AutoTradingResDTO.Session startSession(
       Long userId, String idempotencyKey, AutoTradingReqDTO.StartSession request) {
+    AutoTradingResDTO.Session previous = findPreviousIdempotentSession(userId, idempotencyKey);
+    if (previous != null) {
+      return previous;
+    }
+    validatePurchaseOption(request.getPurchaseOptionId());
+    validateNonNegative(request.getCycles(), "cycles");
+    validateNonNegative(request.getIntervalSec(), "intervalSec");
+    List<Long> recommendationIds = request.getRecommendationIds().stream().distinct().toList();
+    String requestedBundleId = normalizeBundleId(request.getBundleId());
+    String resolvedBundleId = resolveBundleId(requestedBundleId);
+    List<String> tickers = findSelectedTickers(userId, recommendationIds, resolvedBundleId);
+    return startResolvedSession(
+        userId,
+        idempotencyKey,
+        resolvedBundleId,
+        recommendationIds,
+        tickers,
+        request.getPurchaseOptionId(),
+        request.getCycles(),
+        request.getIntervalSec());
+  }
+
+  @Override
+  public AutoTradingResDTO.Session startActiveUniverseSession(
+      Long userId,
+      String idempotencyKey,
+      Integer purchaseOptionId,
+      Integer cycles,
+      Integer intervalSec) {
+    AutoTradingResDTO.Session previous = findPreviousIdempotentSession(userId, idempotencyKey);
+    if (previous != null) {
+      return previous;
+    }
+    validatePurchaseOption(purchaseOptionId);
+    validateNonNegative(cycles, "cycles");
+    validateNonNegative(intervalSec, "intervalSec");
+    String resolvedBundleId = resolveBundleId(null);
+    return startResolvedSession(
+        userId,
+        idempotencyKey,
+        resolvedBundleId,
+        List.of(),
+        List.of(),
+        purchaseOptionId,
+        cycles,
+        intervalSec);
+  }
+
+  private AutoTradingResDTO.Session findPreviousIdempotentSession(
+      Long userId, String idempotencyKey) {
+    String normalizedKey = requireIdempotencyKey(idempotencyKey);
+    return autoTradingSessionRepository
+        .findByUserIdAndIdempotencyKey(userId, normalizedKey)
+        .map(AutoTradingConverter::toSession)
+        .orElse(null);
+  }
+
+  private AutoTradingResDTO.Session startResolvedSession(
+      Long userId,
+      String idempotencyKey,
+      String resolvedBundleId,
+      List<Long> recommendationIds,
+      List<String> tickers,
+      Integer purchaseOptionId,
+      Integer cycles,
+      Integer intervalSec) {
     String normalizedKey = requireIdempotencyKey(idempotencyKey);
     AutoTradingSession previous =
         autoTradingSessionRepository
@@ -57,24 +125,20 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
       return AutoTradingConverter.toSession(previous);
     }
 
-    List<Long> recommendationIds = request.getRecommendationIds().stream().distinct().toList();
-    List<String> tickers = findSelectedTickers(userId, recommendationIds);
-    validatePurchaseOption(request.getPurchaseOptionId());
-
     if (autoTradingSessionRepository.existsByActiveSlot(ACTIVE_SLOT)) {
       throw new AutoTradingException(AutoTradingErrorCode.ACTIVE_SESSION_EXISTS);
     }
 
     String aiRequestId = UUID.randomUUID().toString();
     try {
-      requirePaperAutoReadiness();
+      requirePaperAutoReadiness(resolvedBundleId);
     } catch (AiServerException e) {
       persistFailedStartAttempt(
           userId,
           normalizedKey,
           recommendationIds,
           tickers,
-          request,
+          purchaseOptionId,
           aiRequestId,
           e.getClientMessage());
       throw e;
@@ -84,7 +148,7 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
           normalizedKey,
           recommendationIds,
           tickers,
-          request,
+          purchaseOptionId,
           aiRequestId,
           e.getClientMessage());
       throw e;
@@ -98,7 +162,7 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
             .selectedTickers(String.join(",", tickers))
             .recommendationIds(
                 recommendationIds.stream().map(String::valueOf).collect(Collectors.joining(",")))
-            .purchaseOptionId(request.getPurchaseOptionId())
+            .purchaseOptionId(purchaseOptionId)
             .idempotencyKey(normalizedKey)
             .aiRequestId(aiRequestId)
             .activeSlot(ACTIVE_SLOT)
@@ -117,16 +181,9 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     try {
       response =
           aiServerClient.startPaperAutoTrading(
-              aiRequestId,
-              bundleId,
-              request.getCycles(),
-              request.getIntervalSec(),
-              tickers,
-              confirmPhrase);
+              aiRequestId, resolvedBundleId, cycles, intervalSec, tickers, confirmPhrase);
     } catch (AiServerException e) {
-      session.markStartFailed(e.getClientMessage());
-      autoTradingSessionRepository.saveAndFlush(session);
-      throw e;
+      return recoverOrPreserveAmbiguousStart(session, e);
     }
 
     if (!response.getAccepted()) {
@@ -143,12 +200,46 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     return AutoTradingConverter.toSession(autoTradingSessionRepository.saveAndFlush(session));
   }
 
+  private AutoTradingResDTO.Session recoverOrPreserveAmbiguousStart(
+      AutoTradingSession session, AiServerException cause) {
+    if (!isAmbiguousStartException(cause)) {
+      session.markStartFailed(cause.getClientMessage());
+      autoTradingSessionRepository.saveAndFlush(session);
+      throw cause;
+    }
+
+    try {
+      PaperAutoTradingStatusResponse status =
+          aiServerClient.getPaperAutoTradingStatus(session.getAiRequestId());
+      if (status.getRunning() && hasText(status.getSessionId())) {
+        session.markRunning(
+            status.getSessionId(),
+            "AI start response lost; recovered via status probe",
+            parseDateTime(status.getStartedAt()));
+        return AutoTradingConverter.toSession(autoTradingSessionRepository.saveAndFlush(session));
+      }
+    } catch (RuntimeException ignored) {
+      // Keep STARTING so the status monitor can recover or time out the ambiguous start later.
+    }
+
+    session.updateAiStatusMessage(
+        "AI start response lost; status probe pending: "
+            + AiDetailSanitizer.sanitize(cause.getClientMessage()));
+    autoTradingSessionRepository.saveAndFlush(session);
+    throw cause;
+  }
+
+  private static boolean isAmbiguousStartException(AiServerException cause) {
+    return cause.getCode() == AiServerErrorCode.AI503_01
+        || cause.getCode() == AiServerErrorCode.AI504_01;
+  }
+
   private void persistFailedStartAttempt(
       Long userId,
       String normalizedKey,
       List<Long> recommendationIds,
       List<String> tickers,
-      AutoTradingReqDTO.StartSession request,
+      Integer purchaseOptionId,
       String aiRequestId,
       String message) {
     AutoTradingSession failedSession =
@@ -159,7 +250,7 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
             .selectedTickers(String.join(",", tickers))
             .recommendationIds(
                 recommendationIds.stream().map(String::valueOf).collect(Collectors.joining(",")))
-            .purchaseOptionId(request.getPurchaseOptionId())
+            .purchaseOptionId(purchaseOptionId)
             .idempotencyKey(normalizedKey)
             .aiRequestId(aiRequestId)
             .activeSlot(ACTIVE_SLOT)
@@ -217,7 +308,8 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     return AutoTradingConverter.toSession(autoTradingSessionRepository.saveAndFlush(session));
   }
 
-  private List<String> findSelectedTickers(Long userId, List<Long> recommendationIds) {
+  private List<String> findSelectedTickers(
+      Long userId, List<Long> recommendationIds, String requestedBundleId) {
     if (recommendationIds.isEmpty()) {
       throw new AutoTradingException(AutoTradingErrorCode.INVALID_RECOMMENDATIONS);
     }
@@ -225,9 +317,12 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
         userSelectedRecommendationRepository.findAllByUserIdAndRecommendation_IdIn(
             userId, recommendationIds);
     Map<Long, String> tickerByRecommendationId = new LinkedHashMap<>();
+    Map<Long, String> bundleByRecommendationId = new LinkedHashMap<>();
     for (UserSelectedRecommendation item : selected) {
       tickerByRecommendationId.putIfAbsent(
           item.getRecommendation().getId(), item.getRecommendation().getTickerCode());
+      bundleByRecommendationId.putIfAbsent(
+          item.getRecommendation().getId(), item.getRecommendation().getModelBundleId());
     }
     if (!tickerByRecommendationId.keySet().containsAll(recommendationIds)) {
       throw new AutoTradingException(AutoTradingErrorCode.INVALID_RECOMMENDATIONS);
@@ -237,6 +332,14 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
         .anyMatch(ticker -> ticker == null || ticker.isBlank())) {
       throw new AutoTradingException(AutoTradingErrorCode.SELECTED_TICKERS_EMPTY);
     }
+    if (requestedBundleId != null
+        && !requestedBundleId.isBlank()
+        && recommendationIds.stream()
+            .map(bundleByRecommendationId::get)
+            .anyMatch(bundle -> bundle == null || !requestedBundleId.equals(bundle.trim()))) {
+      throw new AutoTradingException(
+          AutoTradingErrorCode.READINESS_GATE_BLOCKED, "recommendation_bundle_mismatch");
+    }
     return recommendationIds.stream()
         .map(tickerByRecommendationId::get)
         .map(String::trim)
@@ -244,12 +347,33 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
         .toList();
   }
 
-  private void requirePaperAutoReadiness() {
-    ServiceReadinessResponse readiness = aiServerClient.getServiceReadiness(bundleId);
+  private void requirePaperAutoReadiness(String resolvedBundleId) {
+    if (resolvedBundleId == null || resolvedBundleId.isBlank()) {
+      throw new AutoTradingException(
+          AutoTradingErrorCode.READINESS_GATE_BLOCKED, "paper_bundle_id_missing");
+    }
+    ServiceReadinessResponse readiness = aiServerClient.getServiceReadiness(resolvedBundleId);
     String reason = paperAutoReadinessBlockReason(readiness);
     if (!reason.isBlank()) {
       throw new AutoTradingException(AutoTradingErrorCode.READINESS_GATE_BLOCKED, reason);
     }
+  }
+
+  private String normalizeBundleId(String requestedBundleId) {
+    if (requestedBundleId != null && !requestedBundleId.isBlank()) {
+      return requestedBundleId.trim();
+    }
+    return "";
+  }
+
+  private String resolveBundleId(String requestedBundleId) {
+    if (requestedBundleId != null && !requestedBundleId.isBlank()) {
+      return requestedBundleId;
+    }
+    if (bundleId == null) {
+      return "";
+    }
+    return bundleId.trim();
   }
 
   private static String paperAutoReadinessBlockReason(ServiceReadinessResponse readiness) {
@@ -259,6 +383,12 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     List<String> blockers = new java.util.ArrayList<>();
     if (!"PASS".equalsIgnoreCase(readiness.getStatus())) {
       blockers.add("status=" + readiness.getStatus());
+    }
+    if (!"PASS".equalsIgnoreCase(readiness.getDeployQuality())) {
+      blockers.add("deploy_quality_blocked");
+    }
+    if (!"PASS".equalsIgnoreCase(readiness.getBrokerEvidence())) {
+      blockers.add("broker_evidence_blocked");
     }
     if (!readiness.getSafeToEnableOrderActions()) {
       blockers.add("order_actions_not_enabled");
@@ -291,6 +421,12 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     }
   }
 
+  private static void validateNonNegative(Integer value, String fieldName) {
+    if (value != null && value < 0) {
+      throw new IllegalArgumentException(fieldName + " must be non-negative");
+    }
+  }
+
   private AutoTradingSession findSession(Long userId, String sessionId) {
     return autoTradingSessionRepository
         .findBySessionIdAndUserId(sessionId, userId)
@@ -307,6 +443,10 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
       return safeStatus;
     }
     return safeStatus + ": " + safeReason;
+  }
+
+  private static boolean hasText(String value) {
+    return value != null && !value.isBlank();
   }
 
   private static LocalDateTime parseDateTime(String raw) {

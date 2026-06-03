@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Tag(name = "AutoTrading", description = "KIS 모의 자동매매 세션 API")
@@ -52,6 +53,29 @@ public class AutoTradingController {
       @AuthenticationPrincipal String email, @PathVariable String sessionId) {
     AutoTradingResDTO.Session result =
         autoTradingCommandService.stopSession(resolveUserId(email), sessionId);
+    return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
+        .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+  }
+
+  @Operation(summary = "활성 자동매매 세션 조회", description = "현재 사용자에게 연결된 활성 모의 자동매매 세션을 조회합니다.")
+  @GetMapping("/active")
+  public ResponseEntity<ApiResponse<AutoTradingResDTO.Session>> getActiveSession(
+      @AuthenticationPrincipal String email) {
+    AutoTradingResDTO.Session result =
+        autoTradingQueryService.findActiveSession(resolveUserId(email));
+    return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
+        .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+  }
+
+  @Operation(
+      summary = "자동매매 준비 상태 조회",
+      description = "AI service readiness를 조회해 FE 시작 버튼 게이트에 사용합니다.")
+  @GetMapping("/readiness")
+  public ResponseEntity<ApiResponse<AutoTradingResDTO.Readiness>> getReadiness(
+      @AuthenticationPrincipal String email,
+      @RequestParam(name = "bundleId", required = false) String bundleId) {
+    AutoTradingResDTO.Readiness result =
+        autoTradingQueryService.findReadiness(resolveUserId(email), bundleId);
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
         .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }

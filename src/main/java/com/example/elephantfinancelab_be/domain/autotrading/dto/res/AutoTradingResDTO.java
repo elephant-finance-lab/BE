@@ -53,4 +53,26 @@ public class AutoTradingResDTO {
     private String reportPath;
     private String lastError;
   }
+
+  @Builder
+  @Getter
+  @NoArgsConstructor
+  @AllArgsConstructor
+  public static class Readiness {
+    private String status;
+    private String generatedAt;
+    private String bundleId;
+    private String deployQuality;
+    private String brokerEvidence;
+    private boolean liveTradingAllowed;
+    private boolean registryMutated;
+    private boolean safeToShowDashboard;
+    private boolean safeToEnableOrderActions;
+    private boolean safeToEnableLiveActions;
+    private boolean activeSessionExists;
+    private boolean activeSessionOwnedByCurrentUser;
+    private boolean canStartPaperAutoTrading;
+    private String blockedReason;
+    private String detailsJson;
+  }
 }
