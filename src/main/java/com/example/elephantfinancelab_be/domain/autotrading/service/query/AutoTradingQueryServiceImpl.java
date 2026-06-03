@@ -10,6 +10,9 @@ import com.example.elephantfinancelab_be.domain.autotrading.exception.AutoTradin
 import com.example.elephantfinancelab_be.domain.autotrading.exception.code.AutoTradingErrorCode;
 import com.example.elephantfinancelab_be.domain.autotrading.repository.AutoTradingSessionRepository;
 import com.example.elephantfinancelab_be.global.config.AiServerClient;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -26,6 +29,9 @@ public class AutoTradingQueryServiceImpl implements AutoTradingQueryService {
 
   @Value("${ai.paper-auto.bundle-id:}")
   private String bundleId;
+
+  @Value("${auto-trading.operation.starting-timeout-minutes:15}")
+  private long startingTimeoutMinutes;
 
   @Override
   @Transactional(readOnly = true)
@@ -57,13 +63,23 @@ public class AutoTradingQueryServiceImpl implements AutoTradingQueryService {
             && !session.getAiSessionId().isBlank()
             && session.getAiSessionId().equals(response.getSessionId());
 
-    if (matchesSession) {
+    if (!matchesSession && canRecoverAcceptedStartingSession(session, response)) {
+      session.markRunning(
+          response.getSessionId(),
+          "AI status: " + response.getStatus() + " (AI 세션 수락 상태 복구)",
+          parseDateTime(response.getStartedAt()));
+      session = autoTradingSessionRepository.saveAndFlush(session);
+      matchesSession = true;
+    } else if (matchesSession) {
       String message = "AI status: " + response.getStatus();
       if (!response.getRunning()) {
         reconcileTerminalStatus(session, response, message);
       } else {
         session.updateAiStatusMessage(message);
       }
+      session = autoTradingSessionRepository.saveAndFlush(session);
+    } else if (isMissingAiSession(response) && isExpiredStartingSession(session)) {
+      session.markStartFailed("AI status: STARTING_TIMEOUT (AI 세션 수락 시간 초과)");
       session = autoTradingSessionRepository.saveAndFlush(session);
     } else if (isMissingAiSession(response) && shouldPreserveStartingSession(session)) {
       session.updateAiStatusMessage("AI status: STARTING (AI 세션 수락 대기 중)");
@@ -76,7 +92,6 @@ public class AutoTradingQueryServiceImpl implements AutoTradingQueryService {
   }
 
   @Override
-  @Transactional(readOnly = true)
   public AutoTradingResDTO.Readiness findReadiness(Long userId, String requestedBundleId) {
     String resolvedBundleId = resolveBundleId(requestedBundleId);
     ActiveSlotOccupancy occupancy = activeSlotOccupancy(userId);
@@ -84,9 +99,17 @@ public class AutoTradingQueryServiceImpl implements AutoTradingQueryService {
       return AutoTradingConverter.blockedReadiness(
           "", "paper_bundle_id_missing", occupancy.exists(), occupancy.ownedByCurrentUser());
     }
-    ServiceReadinessResponse readiness = aiServerClient.getServiceReadiness(resolvedBundleId);
-    return AutoTradingConverter.toReadiness(
-        readiness, occupancy.exists(), occupancy.ownedByCurrentUser());
+    try {
+      ServiceReadinessResponse readiness = aiServerClient.getServiceReadiness(resolvedBundleId);
+      return AutoTradingConverter.toReadiness(
+          readiness, occupancy.exists(), occupancy.ownedByCurrentUser());
+    } catch (RuntimeException e) {
+      return AutoTradingConverter.blockedReadiness(
+          resolvedBundleId,
+          "readiness_unavailable",
+          occupancy.exists(),
+          occupancy.ownedByCurrentUser());
+    }
   }
 
   private String resolveBundleId(String requestedBundleId) {
@@ -123,8 +146,39 @@ public class AutoTradingQueryServiceImpl implements AutoTradingQueryService {
         && (session.getAiSessionId() == null || session.getAiSessionId().isBlank());
   }
 
+  private static boolean canRecoverAcceptedStartingSession(
+      AutoTradingSession session, PaperAutoTradingStatusResponse response) {
+    return shouldPreserveStartingSession(session)
+        && response.getRunning()
+        && response.getSessionId() != null
+        && !response.getSessionId().isBlank();
+  }
+
+  private boolean isExpiredStartingSession(AutoTradingSession session) {
+    if (!shouldPreserveStartingSession(session) || session.getCreatedAt() == null) {
+      return false;
+    }
+    long timeoutMinutes = Math.max(1, startingTimeoutMinutes);
+    return session.getCreatedAt().plusMinutes(timeoutMinutes).isBefore(LocalDateTime.now());
+  }
+
   private static boolean isFailedStatus(String status) {
     return "FAIL".equalsIgnoreCase(status) || "FAILED".equalsIgnoreCase(status);
+  }
+
+  private static LocalDateTime parseDateTime(String value) {
+    if (value == null || value.isBlank()) {
+      return LocalDateTime.now();
+    }
+    try {
+      return OffsetDateTime.parse(value).toLocalDateTime();
+    } catch (DateTimeParseException ignored) {
+      try {
+        return LocalDateTime.parse(value);
+      } catch (DateTimeParseException ignoredAgain) {
+        return LocalDateTime.now();
+      }
+    }
   }
 
   private AutoTradingSession getSession(Long userId, String sessionId) {

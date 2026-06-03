@@ -27,6 +27,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -59,6 +60,7 @@ class AutoTradingOperationSchedulerTest {
     ReflectionTestUtils.setField(scheduler, "intervalSec", 60);
     ReflectionTestUtils.setField(scheduler, "retryAttempts", 2);
     ReflectionTestUtils.setField(scheduler, "retryBackoffMs", 0L);
+    ReflectionTestUtils.setField(scheduler, "startingTimeoutMinutes", 15L);
     ReflectionTestUtils.setField(scheduler, "marketHolidays", "2026-06-03,2026-07-17");
     ReflectionTestUtils.setField(scheduler, "bundleId", "BUNDLE-TEST");
   }
@@ -242,13 +244,90 @@ class AutoTradingOperationSchedulerTest {
             .build();
     when(sessionRepository.findByActiveSlot("SHARED_KIS_VIRTUAL_ACCOUNT"))
         .thenReturn(Optional.of(startingSession));
+    when(queryService.findAiStatus(7L, "be-session-starting"))
+        .thenReturn(
+            AutoTradingResDTO.AiStatus.builder()
+                .sessionId("be-session-starting")
+                .sessionStatus(AutoTradingSessionStatus.STARTING)
+                .status("IDLE")
+                .running(false)
+                .build());
 
     scheduler.monitorActivePaperAuto();
 
-    verify(queryService, never()).findAiStatus(anyLong(), anyString());
+    verify(queryService).findAiStatus(7L, "be-session-starting");
     ArgumentCaptor<AutoTradingEvent> eventCaptor = ArgumentCaptor.forClass(AutoTradingEvent.class);
     verify(eventRepository).saveAndFlush(eventCaptor.capture());
     assertThat(eventCaptor.getValue().getPayloadJson()).contains("starting_without_ai_session");
+  }
+
+  @Test
+  void monitorAllowsQueryServiceToRecoverStartingSession() {
+    AutoTradingSession startingSession =
+        AutoTradingSession.builder()
+            .sessionId("be-session-starting-recovered")
+            .userId(7L)
+            .status(AutoTradingSessionStatus.STARTING)
+            .selectedTickers("")
+            .recommendationIds("")
+            .purchaseOptionId(2)
+            .idempotencyKey("server-paper-auto-2026-06-04")
+            .activeSlot("SHARED_KIS_VIRTUAL_ACCOUNT")
+            .aiRequestId("ai-request-1")
+            .build();
+    when(sessionRepository.findByActiveSlot("SHARED_KIS_VIRTUAL_ACCOUNT"))
+        .thenReturn(Optional.of(startingSession));
+    when(queryService.findAiStatus(7L, "be-session-starting-recovered"))
+        .thenReturn(
+            AutoTradingResDTO.AiStatus.builder()
+                .sessionId("be-session-starting-recovered")
+                .sessionStatus(AutoTradingSessionStatus.RUNNING)
+                .status("RUNNING")
+                .running(true)
+                .build());
+
+    scheduler.monitorActivePaperAuto();
+
+    verify(queryService).findAiStatus(7L, "be-session-starting-recovered");
+    verify(sessionRepository, never()).saveAndFlush(startingSession);
+  }
+
+  @Test
+  void monitorFailsStaleStartingSessionAfterTimeout() {
+    AutoTradingSession startingSession =
+        AutoTradingSession.builder()
+            .sessionId("be-session-starting-timeout")
+            .userId(7L)
+            .status(AutoTradingSessionStatus.STARTING)
+            .selectedTickers("")
+            .recommendationIds("")
+            .purchaseOptionId(2)
+            .idempotencyKey("server-paper-auto-2026-06-04")
+            .activeSlot("SHARED_KIS_VIRTUAL_ACCOUNT")
+            .aiRequestId("ai-request-1")
+            .build();
+    ReflectionTestUtils.setField(startingSession, "createdAt", LocalDateTime.of(2026, 6, 4, 8, 40));
+    when(sessionRepository.findByActiveSlot("SHARED_KIS_VIRTUAL_ACCOUNT"))
+        .thenReturn(Optional.of(startingSession));
+    when(sessionRepository.saveAndFlush(startingSession)).thenReturn(startingSession);
+    when(queryService.findAiStatus(7L, "be-session-starting-timeout"))
+        .thenReturn(
+            AutoTradingResDTO.AiStatus.builder()
+                .sessionId("be-session-starting-timeout")
+                .sessionStatus(AutoTradingSessionStatus.STARTING)
+                .status("IDLE")
+                .running(false)
+                .build());
+
+    scheduler.monitorActivePaperAuto();
+
+    verify(queryService).findAiStatus(7L, "be-session-starting-timeout");
+    verify(sessionRepository).saveAndFlush(startingSession);
+    assertThat(startingSession.getStatus()).isEqualTo(AutoTradingSessionStatus.FAILED);
+    ArgumentCaptor<AutoTradingEvent> eventCaptor = ArgumentCaptor.forClass(AutoTradingEvent.class);
+    verify(eventRepository, times(2)).saveAndFlush(eventCaptor.capture());
+    assertThat(eventCaptor.getAllValues().stream().map(AutoTradingEvent::getPayloadJson))
+        .anyMatch(payload -> payload.contains("starting_session_timeout"));
   }
 
   @Test
@@ -267,6 +346,34 @@ class AutoTradingOperationSchedulerTest {
 
     verify(commandService).stopSession(7L, "be-session-active");
     verify(eventRepository).saveAndFlush(any(AutoTradingEvent.class));
+  }
+
+  @Test
+  void stopDailyPaperAutoDryRunAuditsWithoutStopping() {
+    ReflectionTestUtils.setField(scheduler, "dryRun", true);
+    AutoTradingSession activeSession = activeSession();
+    when(sessionRepository.findByActiveSlot("SHARED_KIS_VIRTUAL_ACCOUNT"))
+        .thenReturn(Optional.of(activeSession));
+
+    scheduler.stopDailyPaperAuto();
+
+    verify(commandService, never()).stopSession(anyLong(), anyString());
+    ArgumentCaptor<AutoTradingEvent> eventCaptor = ArgumentCaptor.forClass(AutoTradingEvent.class);
+    verify(eventRepository).saveAndFlush(eventCaptor.capture());
+    assertThat(eventCaptor.getValue().getPayloadJson()).contains("dry_run_enabled");
+  }
+
+  @Test
+  void stopDailyPaperAutoAuditsUnexpectedOuterFailure() {
+    when(sessionRepository.findByActiveSlot("SHARED_KIS_VIRTUAL_ACCOUNT"))
+        .thenThrow(new IllegalStateException("database_unavailable"));
+
+    scheduler.stopDailyPaperAuto();
+
+    verify(commandService, never()).stopSession(anyLong(), anyString());
+    ArgumentCaptor<AutoTradingEvent> eventCaptor = ArgumentCaptor.forClass(AutoTradingEvent.class);
+    verify(eventRepository).saveAndFlush(eventCaptor.capture());
+    assertThat(eventCaptor.getValue().getPayloadJson()).contains("database_unavailable");
   }
 
   @Test

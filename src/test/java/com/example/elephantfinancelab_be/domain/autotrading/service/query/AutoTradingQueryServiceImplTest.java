@@ -14,7 +14,10 @@ import com.example.elephantfinancelab_be.domain.autotrading.entity.AutoTradingSe
 import com.example.elephantfinancelab_be.domain.autotrading.entity.AutoTradingSessionStatus;
 import com.example.elephantfinancelab_be.domain.autotrading.exception.AutoTradingException;
 import com.example.elephantfinancelab_be.domain.autotrading.repository.AutoTradingSessionRepository;
+import com.example.elephantfinancelab_be.global.apiPayload.code.AiServerErrorCode;
+import com.example.elephantfinancelab_be.global.apiPayload.exception.AiServerException;
 import com.example.elephantfinancelab_be.global.config.AiServerClient;
+import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -166,6 +169,18 @@ class AutoTradingQueryServiceImplTest {
 
     assertThat(result.isCanStartPaperAutoTrading()).isFalse();
     assertThat(result.getBlockedReason()).isEqualTo("registry_mutated_true");
+  }
+
+  @Test
+  void readinessReturnsBlockedWhenAiServerReadinessCallFails() {
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST"))
+        .thenThrow(new AiServerException(AiServerErrorCode.AI503_01));
+
+    AutoTradingResDTO.Readiness result = service.findReadiness(1L, null);
+
+    assertThat(result.isCanStartPaperAutoTrading()).isFalse();
+    assertThat(result.getBundleId()).isEqualTo("BUNDLE-TEST");
+    assertThat(result.getBlockedReason()).isEqualTo("readiness_unavailable");
   }
 
   @Test
@@ -360,6 +375,67 @@ class AutoTradingQueryServiceImplTest {
     assertThat(result.getSessionStatus()).isEqualTo(AutoTradingSessionStatus.STARTING);
     assertThat(session.getStatus()).isEqualTo(AutoTradingSessionStatus.STARTING);
     assertThat(session.getAiStatusMessage()).contains("AI 세션 수락 대기 중");
+    verify(sessionRepository).saveAndFlush(session);
+  }
+
+  @Test
+  void recoversStartingSessionWhenAiServerAcceptedSessionButBeLostResponse() {
+    AutoTradingSession session =
+        AutoTradingSession.builder()
+            .sessionId("be-session-recover")
+            .userId(1L)
+            .status(AutoTradingSessionStatus.STARTING)
+            .aiRequestId("start-request-recover")
+            .activeSlot("SHARED_KIS_VIRTUAL_ACCOUNT")
+            .build();
+    when(sessionRepository.findBySessionIdAndUserId("be-session-recover", 1L))
+        .thenReturn(Optional.of(session));
+    when(aiServerClient.getPaperAutoTradingStatus("start-request-recover"))
+        .thenReturn(
+            PaperAutoTradingStatusResponse.newBuilder()
+                .setSessionId("ai-session-recovered")
+                .setStatus("RUNNING")
+                .setRunning(true)
+                .setStartedAt("2026-06-04T09:01:00+09:00")
+                .build());
+    when(sessionRepository.saveAndFlush(session)).thenReturn(session);
+
+    AutoTradingResDTO.AiStatus result = service.findAiStatus(1L, "be-session-recover");
+
+    assertThat(result.isMatchesSession()).isTrue();
+    assertThat(result.getSessionStatus()).isEqualTo(AutoTradingSessionStatus.RUNNING);
+    assertThat(session.getAiSessionId()).isEqualTo("ai-session-recovered");
+    assertThat(session.getAiStatusMessage()).contains("AI 세션 수락 상태 복구");
+    verify(sessionRepository).saveAndFlush(session);
+  }
+
+  @Test
+  void expiresStartingSessionWithoutAiSessionAfterTimeout() {
+    ReflectionTestUtils.setField(service, "startingTimeoutMinutes", 15L);
+    AutoTradingSession session =
+        AutoTradingSession.builder()
+            .sessionId("be-session-starting-timeout")
+            .userId(1L)
+            .status(AutoTradingSessionStatus.STARTING)
+            .aiRequestId("start-request-timeout")
+            .activeSlot("SHARED_KIS_VIRTUAL_ACCOUNT")
+            .build();
+    ReflectionTestUtils.setField(session, "createdAt", LocalDateTime.now().minusMinutes(30));
+    when(sessionRepository.findBySessionIdAndUserId("be-session-starting-timeout", 1L))
+        .thenReturn(Optional.of(session));
+    when(aiServerClient.getPaperAutoTradingStatus("start-request-timeout"))
+        .thenReturn(
+            PaperAutoTradingStatusResponse.newBuilder()
+                .setStatus("IDLE")
+                .setRunning(false)
+                .build());
+    when(sessionRepository.saveAndFlush(session)).thenReturn(session);
+
+    AutoTradingResDTO.AiStatus result = service.findAiStatus(1L, "be-session-starting-timeout");
+
+    assertThat(result.getSessionStatus()).isEqualTo(AutoTradingSessionStatus.FAILED);
+    assertThat(session.getStatus()).isEqualTo(AutoTradingSessionStatus.FAILED);
+    assertThat(session.getAiStatusMessage()).contains("STARTING_TIMEOUT");
     verify(sessionRepository).saveAndFlush(session);
   }
 

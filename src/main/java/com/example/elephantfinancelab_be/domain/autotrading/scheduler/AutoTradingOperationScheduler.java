@@ -79,6 +79,9 @@ public class AutoTradingOperationScheduler {
   @Value("${auto-trading.operation.retry-backoff-ms:1000}")
   private long retryBackoffMs;
 
+  @Value("${auto-trading.operation.starting-timeout-minutes:15}")
+  private long startingTimeoutMinutes;
+
   @Value("${auto-trading.operation.market-holidays:2026-06-03,2026-07-17}")
   private String marketHolidays;
 
@@ -196,7 +199,11 @@ public class AutoTradingOperationScheduler {
     LocalDateTime now = nowKst();
     try {
       if (!isTradingDay(now.toLocalDate())) {
-        audit("daily_start", "SKIPPED", "non_trading_day", Map.of("date", now.toLocalDate()));
+        audit(
+            "daily_start",
+            "SKIPPED",
+            "non_trading_day",
+            Map.of("date", now.toLocalDate().toString()));
         log.info("[AutoTradingOperation] start skipped: non-trading day {}", now.toLocalDate());
         return;
       }
@@ -274,7 +281,11 @@ public class AutoTradingOperationScheduler {
         .ifPresent(
             session -> {
               try {
-                if (isStartingWithoutAiSession(session)) {
+                AutoTradingResDTO.AiStatus status =
+                    autoTradingQueryService.findAiStatus(
+                        session.getUserId(), session.getSessionId());
+                if (status.getSessionStatus() == AutoTradingSessionStatus.STARTING
+                    && isStartingWithoutAiSession(session)) {
                   audit(
                       "monitor",
                       "SKIPPED",
@@ -283,11 +294,20 @@ public class AutoTradingOperationScheduler {
                   log.info(
                       "[AutoTradingOperation] monitor skipped: sessionId={} is STARTING without aiSessionId",
                       session.getSessionId());
+                  if (isExpiredStartingWithoutAiSession(session)) {
+                    session.markStartFailed("AI 세션 수락 시간 초과");
+                    autoTradingSessionRepository.saveAndFlush(session);
+                    audit(
+                        "monitor",
+                        "FAILED",
+                        "starting_session_timeout",
+                        Map.of("sessionId", session.getSessionId()));
+                    log.warn(
+                        "[AutoTradingOperation] monitor failed stale STARTING session: sessionId={}",
+                        session.getSessionId());
+                  }
                   return;
                 }
-                AutoTradingResDTO.AiStatus status =
-                    autoTradingQueryService.findAiStatus(
-                        session.getUserId(), session.getSessionId());
                 log.info(
                     "[AutoTradingOperation] monitor: sessionId={}, sessionStatus={}, aiStatus={}, completedCycles={}/{}",
                     session.getSessionId(),
@@ -317,7 +337,11 @@ public class AutoTradingOperationScheduler {
     LocalDateTime now = nowKst();
     try {
       if (!isTradingDay(now.toLocalDate())) {
-        audit("daily_stop", "SKIPPED", "non_trading_day", Map.of("date", now.toLocalDate()));
+        audit(
+            "daily_stop",
+            "SKIPPED",
+            "non_trading_day",
+            Map.of("date", now.toLocalDate().toString()));
         log.info("[AutoTradingOperation] stop skipped: non-trading day {}", now.toLocalDate());
         return;
       }
@@ -325,6 +349,17 @@ public class AutoTradingOperationScheduler {
           .ifPresentOrElse(
               session -> {
                 try {
+                  if (dryRun) {
+                    audit(
+                        "daily_stop",
+                        "DRY_RUN",
+                        "dry_run_enabled",
+                        Map.of("sessionId", session.getSessionId()));
+                    log.info(
+                        "[AutoTradingOperation] dry-run stop skipped: sessionId={}",
+                        session.getSessionId());
+                    return;
+                  }
                   AutoTradingResDTO.Session stopped =
                       withRetry(
                           "daily_stop",
@@ -357,6 +392,9 @@ public class AutoTradingOperationScheduler {
                 audit("daily_stop", "SKIPPED", "no_active_session", Map.of());
                 log.info("[AutoTradingOperation] stop skipped: no active paper-auto session");
               });
+    } catch (RuntimeException e) {
+      audit("daily_stop", "ERROR", e.getMessage(), Map.of());
+      log.warn("[AutoTradingOperation] paper-auto stop task failed: {}", e.getMessage(), e);
     } finally {
       exitOperation();
     }
@@ -536,6 +574,14 @@ public class AutoTradingOperationScheduler {
   private static boolean isStartingWithoutAiSession(AutoTradingSession session) {
     return session.getStatus() == AutoTradingSessionStatus.STARTING
         && (session.getAiSessionId() == null || session.getAiSessionId().isBlank());
+  }
+
+  private boolean isExpiredStartingWithoutAiSession(AutoTradingSession session) {
+    if (!isStartingWithoutAiSession(session) || session.getCreatedAt() == null) {
+      return false;
+    }
+    long timeoutMinutes = Math.max(1, startingTimeoutMinutes);
+    return session.getCreatedAt().plusMinutes(timeoutMinutes).isBefore(nowKst());
   }
 
   private record ParsedMarketHolidays(String raw, Set<LocalDate> holidays) {
