@@ -293,8 +293,7 @@ public class AutoTradingEventProcessingServiceImpl implements AutoTradingEventPr
       case AUTO_TRADING_FAILED ->
           new NotificationContent(
               NotificationType.AUTO_TRADING, "자동매매 오류", "AI 모의 자동매매가 오류로 중단되었습니다.");
-      case SCHEDULER_AUDIT ->
-          new NotificationContent(NotificationType.SYSTEM, "자동매매 운영 로그", "서버 자동매매 운영 상태가 기록되었습니다.");
+      case SCHEDULER_AUDIT -> throw new IllegalStateException("SCHEDULER_AUDIT is audit-only");
       case UNKNOWN ->
           new NotificationContent(NotificationType.SYSTEM, "알 수 없는 이벤트", "처리할 수 없는 자동매매 이벤트입니다.");
     };

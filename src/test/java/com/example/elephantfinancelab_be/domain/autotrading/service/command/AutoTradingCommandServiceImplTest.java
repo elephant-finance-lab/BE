@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.elephant.ai.v1.PaperAutoTradingStatusResponse;
 import com.elephant.ai.v1.ServiceReadinessResponse;
 import com.elephant.ai.v1.StartPaperAutoTradingResponse;
 import com.elephant.ai.v1.StopPaperAutoTradingResponse;
@@ -166,7 +167,7 @@ class AutoTradingCommandServiceImplTest {
   }
 
   @Test
-  void preservesFailedSessionWhenAiServerCannotBeReached() {
+  void recoversAmbiguousStartWhenAiStatusShowsRunningSession() {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
@@ -176,6 +177,42 @@ class AutoTradingCommandServiceImplTest {
     when(aiServerClient.startPaperAutoTrading(
             anyString(), anyString(), any(), any(), any(), anyString()))
         .thenThrow(new AiServerException(AiServerErrorCode.AI503_01));
+    when(aiServerClient.getPaperAutoTradingStatus(anyString()))
+        .thenReturn(
+            PaperAutoTradingStatusResponse.newBuilder()
+                .setRunning(true)
+                .setStatus("RUNNING")
+                .setSessionId("ai-session-recovered")
+                .setStartedAt("2026-06-04T09:01:00+09:00")
+                .build());
+
+    AutoTradingResDTO.Session result = service.startSession(1L, "idempotency-1", request());
+
+    assertThat(result.getStatus()).isEqualTo(AutoTradingSessionStatus.RUNNING);
+    assertThat(result.getAiSessionId()).isEqualTo("ai-session-recovered");
+
+    ArgumentCaptor<AutoTradingSession> sessionCaptor =
+        ArgumentCaptor.forClass(AutoTradingSession.class);
+    verify(sessionRepository, times(2)).saveAndFlush(sessionCaptor.capture());
+    assertThat(sessionCaptor.getAllValues().getLast().getStatus())
+        .isEqualTo(AutoTradingSessionStatus.RUNNING);
+    assertThat(sessionCaptor.getAllValues().getLast().getAiStatusMessage())
+        .contains("recovered via status probe");
+  }
+
+  @Test
+  void preservesStartingSessionWhenAmbiguousStartProbeCannotConfirm() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
+        .thenReturn(Optional.empty());
+    when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+        .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
+    when(aiServerClient.startPaperAutoTrading(
+            anyString(), anyString(), any(), any(), any(), anyString()))
+        .thenThrow(new AiServerException(AiServerErrorCode.AI504_01));
+    when(aiServerClient.getPaperAutoTradingStatus(anyString()))
+        .thenThrow(new AiServerException(AiServerErrorCode.AI503_01));
 
     assertThatThrownBy(() -> service.startSession(1L, "idempotency-1", request()))
         .isInstanceOf(AiServerException.class);
@@ -183,10 +220,10 @@ class AutoTradingCommandServiceImplTest {
     ArgumentCaptor<AutoTradingSession> sessionCaptor =
         ArgumentCaptor.forClass(AutoTradingSession.class);
     verify(sessionRepository, times(2)).saveAndFlush(sessionCaptor.capture());
-    assertThat(sessionCaptor.getAllValues().getLast().getStatus())
-        .isEqualTo(AutoTradingSessionStatus.FAILED);
-    assertThat(sessionCaptor.getAllValues().getLast().getAiStatusMessage())
-        .contains("AI 서버에 연결할 수 없습니다.");
+    AutoTradingSession preserved = sessionCaptor.getAllValues().getLast();
+    assertThat(preserved.getStatus()).isEqualTo(AutoTradingSessionStatus.STARTING);
+    assertThat(preserved.getActiveSlot()).isEqualTo("SHARED_KIS_VIRTUAL_ACCOUNT");
+    assertThat(preserved.getAiStatusMessage()).contains("status probe pending");
   }
 
   @Test

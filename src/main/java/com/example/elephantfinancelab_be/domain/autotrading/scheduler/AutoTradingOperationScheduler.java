@@ -12,6 +12,7 @@ import com.example.elephantfinancelab_be.domain.autotrading.service.command.Auto
 import com.example.elephantfinancelab_be.domain.autotrading.service.query.AutoTradingQueryService;
 import com.example.elephantfinancelab_be.domain.user.entity.User;
 import com.example.elephantfinancelab_be.domain.user.repository.UserRepository;
+import com.example.elephantfinancelab_be.global.apiPayload.util.AiDetailSanitizer;
 import com.example.elephantfinancelab_be.global.config.AiServerClient;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,6 +24,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -507,7 +509,7 @@ public class AutoTradingOperationScheduler {
       payload.put("dryRun", dryRun);
       payload.put("operationEnabled", operationEnabled);
       payload.put("bundleId", safeText(bundleId));
-      payload.put("details", details == null ? Map.of() : details);
+      payload.put("details", safeDetails(details));
       String payloadJson = objectMapper.writeValueAsString(payload);
       autoTradingEventRepository.saveAndFlush(
           AutoTradingEvent.builder()
@@ -533,7 +535,64 @@ public class AutoTradingOperationScheduler {
   }
 
   private static String safeText(String value) {
-    return value == null ? "" : value.trim();
+    String sanitized = AiDetailSanitizer.sanitize(value);
+    return sanitized == null ? "" : sanitized.trim();
+  }
+
+  private static Map<String, Object> safeDetails(Map<String, ?> details) {
+    if (details == null || details.isEmpty()) {
+      return Map.of();
+    }
+    Map<String, Object> sanitized = new LinkedHashMap<>();
+    details.forEach(
+        (key, value) -> {
+          String safeKey = safeText(key);
+          sanitized.put(safeKey, safeDetailValue(safeKey, value));
+        });
+    return sanitized;
+  }
+
+  private static Object safeDetailValue(String key, Object value) {
+    if (value == null) {
+      return "";
+    }
+    if (isSensitiveAuditKey(key)) {
+      return "<redacted>";
+    }
+    if (value instanceof Number || value instanceof Boolean) {
+      return value;
+    }
+    if (value instanceof Map<?, ?> mapValue) {
+      Map<String, Object> sanitized = new LinkedHashMap<>();
+      mapValue.forEach(
+          (nestedKey, nestedValue) -> {
+            String safeNestedKey = safeText(String.valueOf(nestedKey));
+            sanitized.put(safeNestedKey, safeDetailValue(safeNestedKey, nestedValue));
+          });
+      return sanitized;
+    }
+    if (value instanceof Collection<?> collectionValue) {
+      return collectionValue.stream().map(item -> safeDetailValue("", item)).toList();
+    }
+    return safeText(String.valueOf(value));
+  }
+
+  private static boolean isSensitiveAuditKey(String key) {
+    String normalized = key == null ? "" : key.toLowerCase(java.util.Locale.ROOT);
+    return normalized.contains("token")
+        || normalized.contains("secret")
+        || normalized.contains("password")
+        || normalized.contains("authorization")
+        || normalized.contains("apikey")
+        || normalized.contains("api_key")
+        || normalized.contains("appkey")
+        || normalized.contains("app_key")
+        || normalized.contains("confirmphrase")
+        || normalized.contains("confirm_phrase")
+        || normalized.contains("accountnumber")
+        || normalized.contains("account_number")
+        || normalized.contains("accountno")
+        || normalized.contains("account_no");
   }
 
   private LocalDateTime nowKst() {

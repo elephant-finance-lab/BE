@@ -1,5 +1,6 @@
 package com.example.elephantfinancelab_be.domain.autotrading.service.command;
 
+import com.elephant.ai.v1.PaperAutoTradingStatusResponse;
 import com.elephant.ai.v1.ServiceReadinessResponse;
 import com.elephant.ai.v1.StartPaperAutoTradingResponse;
 import com.elephant.ai.v1.StopPaperAutoTradingResponse;
@@ -13,6 +14,7 @@ import com.example.elephantfinancelab_be.domain.autotrading.exception.code.AutoT
 import com.example.elephantfinancelab_be.domain.autotrading.repository.AutoTradingSessionRepository;
 import com.example.elephantfinancelab_be.domain.recommendation.entity.UserSelectedRecommendation;
 import com.example.elephantfinancelab_be.domain.recommendation.repository.UserSelectedRecommendationRepository;
+import com.example.elephantfinancelab_be.global.apiPayload.code.AiServerErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.AiServerException;
 import com.example.elephantfinancelab_be.global.apiPayload.util.AiDetailSanitizer;
 import com.example.elephantfinancelab_be.global.config.AiServerClient;
@@ -181,9 +183,7 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
           aiServerClient.startPaperAutoTrading(
               aiRequestId, resolvedBundleId, cycles, intervalSec, tickers, confirmPhrase);
     } catch (AiServerException e) {
-      session.markStartFailed(e.getClientMessage());
-      autoTradingSessionRepository.saveAndFlush(session);
-      throw e;
+      return recoverOrPreserveAmbiguousStart(session, e);
     }
 
     if (!response.getAccepted()) {
@@ -198,6 +198,40 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
         aiMessage(response.getStatus(), response.getReason()),
         parseDateTime(response.getStartedAt()));
     return AutoTradingConverter.toSession(autoTradingSessionRepository.saveAndFlush(session));
+  }
+
+  private AutoTradingResDTO.Session recoverOrPreserveAmbiguousStart(
+      AutoTradingSession session, AiServerException cause) {
+    if (!isAmbiguousStartException(cause)) {
+      session.markStartFailed(cause.getClientMessage());
+      autoTradingSessionRepository.saveAndFlush(session);
+      throw cause;
+    }
+
+    try {
+      PaperAutoTradingStatusResponse status =
+          aiServerClient.getPaperAutoTradingStatus(session.getAiRequestId());
+      if (status.getRunning() && hasText(status.getSessionId())) {
+        session.markRunning(
+            status.getSessionId(),
+            "AI start response lost; recovered via status probe",
+            parseDateTime(status.getStartedAt()));
+        return AutoTradingConverter.toSession(autoTradingSessionRepository.saveAndFlush(session));
+      }
+    } catch (RuntimeException ignored) {
+      // Keep STARTING so the status monitor can recover or time out the ambiguous start later.
+    }
+
+    session.updateAiStatusMessage(
+        "AI start response lost; status probe pending: "
+            + AiDetailSanitizer.sanitize(cause.getClientMessage()));
+    autoTradingSessionRepository.saveAndFlush(session);
+    throw cause;
+  }
+
+  private static boolean isAmbiguousStartException(AiServerException cause) {
+    return cause.getCode() == AiServerErrorCode.AI503_01
+        || cause.getCode() == AiServerErrorCode.AI504_01;
   }
 
   private void persistFailedStartAttempt(
@@ -409,6 +443,10 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
       return safeStatus;
     }
     return safeStatus + ": " + safeReason;
+  }
+
+  private static boolean hasText(String value) {
+    return value != null && !value.isBlank();
   }
 
   private static LocalDateTime parseDateTime(String raw) {

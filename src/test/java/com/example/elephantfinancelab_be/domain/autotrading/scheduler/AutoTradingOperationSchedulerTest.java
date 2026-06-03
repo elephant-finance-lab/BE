@@ -29,6 +29,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -366,14 +367,45 @@ class AutoTradingOperationSchedulerTest {
   @Test
   void stopDailyPaperAutoAuditsUnexpectedOuterFailure() {
     when(sessionRepository.findByActiveSlot("SHARED_KIS_VIRTUAL_ACCOUNT"))
-        .thenThrow(new IllegalStateException("database_unavailable"));
+        .thenThrow(
+            new IllegalStateException(
+                "database_unavailable token=secret-token accountNumber=12345678 "
+                    + "/Users/jangjaewon/Desktop/Full_Part/Elephant_Lab/.env"));
 
     scheduler.stopDailyPaperAuto();
 
     verify(commandService, never()).stopSession(anyLong(), anyString());
     ArgumentCaptor<AutoTradingEvent> eventCaptor = ArgumentCaptor.forClass(AutoTradingEvent.class);
     verify(eventRepository).saveAndFlush(eventCaptor.capture());
-    assertThat(eventCaptor.getValue().getPayloadJson()).contains("database_unavailable");
+    assertThat(eventCaptor.getValue().getPayloadJson())
+        .contains("database_unavailable")
+        .contains("token=<redacted>")
+        .contains("accountNumber=<redacted>")
+        .contains("<local-path-redacted>")
+        .doesNotContain("secret-token", "12345678", "/Users/jangjaewon");
+  }
+
+  @Test
+  void schedulerAuditSanitizesNestedDetailsBeforePersisting() {
+    ReflectionTestUtils.invokeMethod(
+        scheduler,
+        "audit",
+        "manual_check",
+        "ERROR",
+        "reason token=reason-secret /Users/jangjaewon/Desktop/Full_Part/Elephant_Lab/.env",
+        Map.of(
+            "raw",
+            "token=detail-secret /Users/jangjaewon/Desktop/Full_Part/BE-main/.env",
+            "nested",
+            Map.of("accountNumber", "12345678")));
+
+    ArgumentCaptor<AutoTradingEvent> eventCaptor = ArgumentCaptor.forClass(AutoTradingEvent.class);
+    verify(eventRepository).saveAndFlush(eventCaptor.capture());
+    assertThat(eventCaptor.getValue().getPayloadJson())
+        .contains("token=<redacted>")
+        .contains("accountNumber")
+        .contains("<local-path-redacted>")
+        .doesNotContain("reason-secret", "detail-secret", "12345678", "/Users/jangjaewon");
   }
 
   @Test
