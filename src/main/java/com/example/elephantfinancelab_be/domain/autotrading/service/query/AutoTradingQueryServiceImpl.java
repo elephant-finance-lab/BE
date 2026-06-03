@@ -14,10 +14,12 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AutoTradingQueryServiceImpl implements AutoTradingQueryService {
@@ -104,6 +106,7 @@ public class AutoTradingQueryServiceImpl implements AutoTradingQueryService {
       return AutoTradingConverter.toReadiness(
           readiness, occupancy.exists(), occupancy.ownedByCurrentUser());
     } catch (RuntimeException e) {
+      log.warn("[AutoTrading] readiness lookup failed: bundleId={}", resolvedBundleId, e);
       return AutoTradingConverter.blockedReadiness(
           resolvedBundleId,
           "readiness_unavailable",

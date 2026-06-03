@@ -84,7 +84,7 @@ public class AutoTradingOperationScheduler {
   @Value("${auto-trading.operation.starting-timeout-minutes:15}")
   private long startingTimeoutMinutes;
 
-  @Value("${auto-trading.operation.market-holidays:2026-06-03,2026-07-17}")
+  @Value("${auto-trading.operation.market-holidays:}")
   private String marketHolidays;
 
   @Value("${ai.paper-auto.bundle-id:}")
@@ -279,53 +279,60 @@ public class AutoTradingOperationScheduler {
     if (!operationEnabled) {
       return;
     }
-    findActiveSession()
-        .ifPresent(
-            session -> {
-              try {
-                AutoTradingResDTO.AiStatus status =
-                    autoTradingQueryService.findAiStatus(
-                        session.getUserId(), session.getSessionId());
-                if (status.getSessionStatus() == AutoTradingSessionStatus.STARTING
-                    && isStartingWithoutAiSession(session)) {
-                  audit(
-                      "monitor",
-                      "SKIPPED",
-                      "starting_without_ai_session",
-                      Map.of("sessionId", session.getSessionId()));
-                  log.info(
-                      "[AutoTradingOperation] monitor skipped: sessionId={} is STARTING without aiSessionId",
-                      session.getSessionId());
-                  if (isExpiredStartingWithoutAiSession(session)) {
-                    session.markStartFailed("AI 세션 수락 시간 초과");
-                    autoTradingSessionRepository.saveAndFlush(session);
+    if (!tryEnterOperation("monitor")) {
+      return;
+    }
+    try {
+      findActiveSession()
+          .ifPresent(
+              session -> {
+                try {
+                  AutoTradingResDTO.AiStatus status =
+                      autoTradingQueryService.findAiStatus(
+                          session.getUserId(), session.getSessionId());
+                  if (status.getSessionStatus() == AutoTradingSessionStatus.STARTING
+                      && isStartingWithoutAiSession(session)) {
                     audit(
                         "monitor",
-                        "FAILED",
-                        "starting_session_timeout",
+                        "SKIPPED",
+                        "starting_without_ai_session",
                         Map.of("sessionId", session.getSessionId()));
-                    log.warn(
-                        "[AutoTradingOperation] monitor failed stale STARTING session: sessionId={}",
+                    log.info(
+                        "[AutoTradingOperation] monitor skipped: sessionId={} is STARTING without aiSessionId",
                         session.getSessionId());
+                    if (isExpiredStartingWithoutAiSession(session)) {
+                      session.markStartFailed("AI 세션 수락 시간 초과");
+                      autoTradingSessionRepository.saveAndFlush(session);
+                      audit(
+                          "monitor",
+                          "FAILED",
+                          "starting_session_timeout",
+                          Map.of("sessionId", session.getSessionId()));
+                      log.warn(
+                          "[AutoTradingOperation] monitor failed stale STARTING session: sessionId={}",
+                          session.getSessionId());
+                    }
+                    return;
                   }
-                  return;
+                  log.info(
+                      "[AutoTradingOperation] monitor: sessionId={}, sessionStatus={}, aiStatus={}, completedCycles={}/{}",
+                      session.getSessionId(),
+                      status.getSessionStatus(),
+                      status.getStatus(),
+                      status.getCompletedCycles(),
+                      status.getTotalCycles());
+                } catch (RuntimeException e) {
+                  audit(
+                      "monitor",
+                      "ERROR",
+                      e.getMessage(),
+                      Map.of("sessionId", session.getSessionId()));
+                  log.warn("[AutoTradingOperation] monitor failed: {}", e.getMessage(), e);
                 }
-                log.info(
-                    "[AutoTradingOperation] monitor: sessionId={}, sessionStatus={}, aiStatus={}, completedCycles={}/{}",
-                    session.getSessionId(),
-                    status.getSessionStatus(),
-                    status.getStatus(),
-                    status.getCompletedCycles(),
-                    status.getTotalCycles());
-              } catch (RuntimeException e) {
-                audit(
-                    "monitor",
-                    "ERROR",
-                    e.getMessage(),
-                    Map.of("sessionId", session.getSessionId()));
-                log.warn("[AutoTradingOperation] monitor failed: {}", e.getMessage(), e);
-              }
-            });
+              });
+    } finally {
+      exitOperation();
+    }
   }
 
   @Scheduled(cron = "${auto-trading.operation.stop-cron:0 30 15 * * MON-FRI}", zone = "Asia/Seoul")

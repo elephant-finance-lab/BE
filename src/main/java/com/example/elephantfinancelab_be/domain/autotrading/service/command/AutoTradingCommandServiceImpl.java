@@ -55,8 +55,8 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
       return previous;
     }
     validatePurchaseOption(request.getPurchaseOptionId());
-    validatePositive(request.getCycles(), "cycles");
-    validatePositive(request.getIntervalSec(), "intervalSec");
+    validateNonNegative(request.getCycles(), "cycles");
+    validateNonNegative(request.getIntervalSec(), "intervalSec");
     List<Long> recommendationIds = request.getRecommendationIds().stream().distinct().toList();
     String requestedBundleId = normalizeBundleId(request.getBundleId());
     String resolvedBundleId = resolveBundleId(requestedBundleId);
@@ -84,8 +84,8 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
       return previous;
     }
     validatePurchaseOption(purchaseOptionId);
-    validatePositive(cycles, "cycles");
-    validatePositive(intervalSec, "intervalSec");
+    validateNonNegative(cycles, "cycles");
+    validateNonNegative(intervalSec, "intervalSec");
     String resolvedBundleId = resolveBundleId(null);
     return startResolvedSession(
         userId,
@@ -421,9 +421,9 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     }
   }
 
-  private static void validatePositive(Integer value, String fieldName) {
-    if (value == null || value < 1) {
-      throw new IllegalArgumentException(fieldName + " must be positive");
+  private static void validateNonNegative(Integer value, String fieldName) {
+    if (value != null && value < 0) {
+      throw new IllegalArgumentException(fieldName + " must be non-negative");
     }
   }
 
