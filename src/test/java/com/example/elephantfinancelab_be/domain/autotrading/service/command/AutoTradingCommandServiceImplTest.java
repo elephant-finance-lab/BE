@@ -8,6 +8,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.elephant.ai.v1.ServiceReadinessResponse;
@@ -57,7 +58,7 @@ class AutoTradingCommandServiceImplTest {
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
     when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
-        .thenReturn(List.of(selectedRecommendation(1L, "005930")));
+        .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
     when(aiServerClient.startPaperAutoTrading(
             anyString(), anyString(), any(), any(), any(), anyString()))
@@ -76,6 +77,70 @@ class AutoTradingCommandServiceImplTest {
     assertThat(result.getSelectedTickers()).containsExactly("005930");
     verify(aiServerClient)
         .startPaperAutoTrading(anyString(), anyString(), any(), any(), any(), anyString());
+  }
+
+  @Test
+  void startsPaperAutoSessionWithRequestedBundleIdFromFeSelection() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
+        .thenReturn(Optional.empty());
+    when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+        .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-FE")));
+    when(aiServerClient.getServiceReadiness("BUNDLE-FE")).thenReturn(paperReady());
+    when(aiServerClient.startPaperAutoTrading(
+            anyString(), anyString(), any(), any(), any(), anyString()))
+        .thenReturn(
+            StartPaperAutoTradingResponse.newBuilder()
+                .setAccepted(true)
+                .setStatus("STARTED")
+                .setSessionId("ai-session-1")
+                .setStartedAt("2026-05-25T12:00:00+09:00")
+                .build());
+
+    AutoTradingResDTO.Session result =
+        service.startSession(1L, "idempotency-1", requestWithBundle("BUNDLE-FE"));
+
+    assertThat(result.getStatus()).isEqualTo(AutoTradingSessionStatus.RUNNING);
+    verify(aiServerClient).getServiceReadiness("BUNDLE-FE");
+    verify(aiServerClient)
+        .startPaperAutoTrading(
+            anyString(),
+            org.mockito.ArgumentMatchers.eq("BUNDLE-FE"),
+            any(),
+            any(),
+            any(),
+            anyString());
+  }
+
+  @Test
+  void startsActiveUniverseSessionWithoutUserSelectedRecommendations() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "server-paper-auto-2026-06-04"))
+        .thenReturn(Optional.empty());
+    when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
+    when(aiServerClient.startPaperAutoTrading(
+            anyString(), anyString(), any(), any(), any(), anyString()))
+        .thenReturn(
+            StartPaperAutoTradingResponse.newBuilder()
+                .setAccepted(true)
+                .setStatus("STARTED")
+                .setSessionId("ai-session-active-universe")
+                .setStartedAt("2026-06-04T09:01:00+09:00")
+                .build());
+
+    AutoTradingResDTO.Session result =
+        service.startActiveUniverseSession(1L, "server-paper-auto-2026-06-04", 2, 390, 60);
+
+    assertThat(result.getStatus()).isEqualTo(AutoTradingSessionStatus.RUNNING);
+    assertThat(result.getAiSessionId()).isEqualTo("ai-session-active-universe");
+    assertThat(result.getSelectedTickers()).isEmpty();
+    assertThat(result.getRecommendationIds()).isEmpty();
+    verifyNoInteractions(selectedRepository);
+    ArgumentCaptor<List<String>> tickersCaptor = ArgumentCaptor.forClass(List.class);
+    verify(aiServerClient)
+        .startPaperAutoTrading(
+            anyString(), anyString(), any(), any(), tickersCaptor.capture(), anyString());
+    assertThat(tickersCaptor.getValue()).isEmpty();
   }
 
   @Test
@@ -106,7 +171,7 @@ class AutoTradingCommandServiceImplTest {
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
     when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
-        .thenReturn(List.of(selectedRecommendation(1L, "005930")));
+        .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
     when(aiServerClient.startPaperAutoTrading(
             anyString(), anyString(), any(), any(), any(), anyString()))
@@ -130,7 +195,7 @@ class AutoTradingCommandServiceImplTest {
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
     when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
-        .thenReturn(List.of(selectedRecommendation(1L, "005930")));
+        .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST"))
         .thenThrow(
             new AiServerException(
@@ -156,7 +221,7 @@ class AutoTradingCommandServiceImplTest {
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
     when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
-        .thenReturn(List.of(selectedRecommendation(1L, "005930")));
+        .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST"))
         .thenReturn(
             ServiceReadinessResponse.newBuilder()
@@ -186,12 +251,44 @@ class AutoTradingCommandServiceImplTest {
   }
 
   @Test
+  void blocksStartBeforeAiCallWhenDeployQualityOrBrokerEvidenceIsNotPass() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
+        .thenReturn(Optional.empty());
+    when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+        .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST"))
+        .thenReturn(
+            ServiceReadinessResponse.newBuilder()
+                .setStatus("PASS")
+                .setDeployQuality("BLOCKED")
+                .setBrokerEvidence("BLOCKED")
+                .setSafeToEnableOrderActions(true)
+                .setLiveTradingAllowed(false)
+                .setRegistryMutated(false)
+                .setSafeToEnableLiveActions(false)
+                .build());
+
+    assertThatThrownBy(() -> service.startSession(1L, "idempotency-1", request()))
+        .isInstanceOf(AutoTradingException.class)
+        .hasMessageContaining("deploy_quality_blocked")
+        .hasMessageContaining("broker_evidence_blocked")
+        .satisfies(
+            exception ->
+                assertThat(((AutoTradingException) exception).getCode())
+                    .isEqualTo(AutoTradingErrorCode.READINESS_GATE_BLOCKED));
+
+    verify(aiServerClient, never())
+        .startPaperAutoTrading(anyString(), anyString(), any(), any(), any(), anyString());
+  }
+
+  @Test
   void preservesAiRejectedStatusReasonInFailureMessage() {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
     when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
-        .thenReturn(List.of(selectedRecommendation(1L, "005930")));
+        .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
     when(aiServerClient.startPaperAutoTrading(
             anyString(), anyString(), any(), any(), any(), anyString()))
@@ -221,7 +318,7 @@ class AutoTradingCommandServiceImplTest {
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
     when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
-        .thenReturn(List.of(selectedRecommendation(1L, "005930")));
+        .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
     when(aiServerClient.startPaperAutoTrading(
             anyString(), anyString(), any(), any(), any(), anyString()))
@@ -261,7 +358,7 @@ class AutoTradingCommandServiceImplTest {
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
     when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
-        .thenReturn(List.of(selectedRecommendation(1L, "005930")));
+        .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
     when(aiServerClient.startPaperAutoTrading(
             anyString(), anyString(), any(), any(), any(), anyString()))
@@ -290,7 +387,7 @@ class AutoTradingCommandServiceImplTest {
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
     when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
-        .thenReturn(List.of(selectedRecommendation(1L, "005930")));
+        .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST"))
         .thenReturn(
             ServiceReadinessResponse.newBuilder()
@@ -325,7 +422,7 @@ class AutoTradingCommandServiceImplTest {
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
     when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
-        .thenReturn(List.of(selectedRecommendation(1L, "005930")));
+        .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST"))
         .thenReturn(
             ServiceReadinessResponse.newBuilder()
@@ -351,7 +448,10 @@ class AutoTradingCommandServiceImplTest {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
     when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L, 2L)))
-        .thenReturn(List.of(selectedRecommendation(1L, "005930"), selectedRecommendation(2L, " ")));
+        .thenReturn(
+            List.of(
+                selectedRecommendation(1L, "005930", "BUNDLE-TEST"),
+                selectedRecommendation(2L, " ")));
 
     assertThatThrownBy(() -> service.startSession(1L, "idempotency-1", request(List.of(1L, 2L))))
         .isInstanceOf(AutoTradingException.class)
@@ -360,6 +460,65 @@ class AutoTradingCommandServiceImplTest {
                 assertThat(((AutoTradingException) exception).getCode())
                     .isEqualTo(AutoTradingErrorCode.SELECTED_TICKERS_EMPTY));
 
+    verify(aiServerClient, never())
+        .startPaperAutoTrading(anyString(), anyString(), any(), any(), any(), anyString());
+  }
+
+  @Test
+  void rejectsStartWhenRequestedBundleDoesNotMatchSelectedRecommendationBundle() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
+        .thenReturn(Optional.empty());
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+        .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-OLD")));
+
+    assertThatThrownBy(
+            () -> service.startSession(1L, "idempotency-1", requestWithBundle("BUNDLE-FE")))
+        .isInstanceOf(AutoTradingException.class)
+        .satisfies(
+            exception -> {
+              assertThat(exception).hasMessageContaining("recommendation_bundle_mismatch");
+              assertThat(((AutoTradingException) exception).getCode())
+                  .isEqualTo(AutoTradingErrorCode.READINESS_GATE_BLOCKED);
+            });
+
+    verify(aiServerClient, never()).getServiceReadiness(anyString());
+    verify(aiServerClient, never())
+        .startPaperAutoTrading(anyString(), anyString(), any(), any(), any(), anyString());
+  }
+
+  @Test
+  void rejectsStartWhenBlankRequestedBundleFallsBackAndSelectedRecommendationBundleDiffers() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
+        .thenReturn(Optional.empty());
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+        .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-OLD")));
+
+    assertThatThrownBy(() -> service.startSession(1L, "idempotency-1", request()))
+        .isInstanceOf(AutoTradingException.class)
+        .satisfies(
+            exception -> {
+              assertThat(exception).hasMessageContaining("recommendation_bundle_mismatch");
+              assertThat(((AutoTradingException) exception).getCode())
+                  .isEqualTo(AutoTradingErrorCode.READINESS_GATE_BLOCKED);
+            });
+
+    verify(aiServerClient, never()).getServiceReadiness(anyString());
+    verify(aiServerClient, never())
+        .startPaperAutoTrading(anyString(), anyString(), any(), any(), any(), anyString());
+  }
+
+  @Test
+  void rejectsStartWhenSelectedRecommendationBundleIsMissing() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
+        .thenReturn(Optional.empty());
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+        .thenReturn(List.of(selectedRecommendation(1L, "005930", null)));
+
+    assertThatThrownBy(() -> service.startSession(1L, "idempotency-1", request()))
+        .isInstanceOf(AutoTradingException.class)
+        .hasMessageContaining("recommendation_bundle_mismatch");
+
+    verify(aiServerClient, never()).getServiceReadiness(anyString());
     verify(aiServerClient, never())
         .startPaperAutoTrading(anyString(), anyString(), any(), any(), any(), anyString());
   }
@@ -403,16 +562,31 @@ class AutoTradingCommandServiceImplTest {
     return request;
   }
 
+  private static AutoTradingReqDTO.StartSession requestWithBundle(String bundleId) {
+    AutoTradingReqDTO.StartSession request = request();
+    ReflectionTestUtils.setField(request, "bundleId", bundleId);
+    return request;
+  }
+
   private static UserSelectedRecommendation selectedRecommendation(Long id, String ticker) {
-    Recommendation recommendation = Recommendation.builder().id(id).tickerCode(ticker).build();
+    return selectedRecommendation(id, ticker, null);
+  }
+
+  private static UserSelectedRecommendation selectedRecommendation(
+      Long id, String ticker, String bundleId) {
+    Recommendation recommendation =
+        Recommendation.builder().id(id).tickerCode(ticker).modelBundleId(bundleId).build();
     return UserSelectedRecommendation.builder().userId(1L).recommendation(recommendation).build();
   }
 
   private static ServiceReadinessResponse paperReady() {
     return ServiceReadinessResponse.newBuilder()
         .setStatus("PASS")
+        .setDeployQuality("PASS")
+        .setBrokerEvidence("PASS")
         .setSafeToEnableOrderActions(true)
         .setLiveTradingAllowed(false)
+        .setRegistryMutated(false)
         .setSafeToEnableLiveActions(false)
         .build();
   }

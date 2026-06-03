@@ -15,6 +15,8 @@ public class AutoTradingReqDTO {
   public static class StartSession {
     @NotEmpty private List<@NotNull Long> recommendationIds;
 
+    private String bundleId;
+
     @NotNull
     @Min(1)
     @Max(4)

@@ -105,3 +105,18 @@ auto-trading:
     enabled: ${AUTO_TRADING_KAFKA_ENABLED:true}
     topic: ${AUTO_TRADING_KAFKA_TOPIC:${KAFKA_TOPIC:elephant-paper-trading-events}}
     group-id: ${AUTO_TRADING_KAFKA_GROUP_ID:elephant-be-auto-trading}
+  operation:
+    enabled: ${AUTO_TRADING_OPERATION_ENABLED:false}
+    operator-email: ${AUTO_TRADING_OPERATION_OPERATOR_EMAIL:}
+    dry-run: ${AUTO_TRADING_OPERATION_DRY_RUN:true}
+    pre-open-cron: ${AUTO_TRADING_OPERATION_PRE_OPEN_CRON:0 30 8 * * MON-FRI}
+    start-cron: ${AUTO_TRADING_OPERATION_START_CRON:0 1 9 * * MON-FRI}
+    stop-cron: ${AUTO_TRADING_OPERATION_STOP_CRON:0 30 15 * * MON-FRI}
+    monitor-fixed-delay-ms: ${AUTO_TRADING_OPERATION_MONITOR_FIXED_DELAY_MS:60000}
+    monitor-initial-delay-ms: ${AUTO_TRADING_OPERATION_MONITOR_INITIAL_DELAY_MS:30000}
+    purchase-option-id: ${AUTO_TRADING_OPERATION_PURCHASE_OPTION_ID:2}
+    cycles: ${AUTO_TRADING_OPERATION_CYCLES:390}
+    interval-sec: ${AUTO_TRADING_OPERATION_INTERVAL_SEC:60}
+    retry-attempts: ${AUTO_TRADING_OPERATION_RETRY_ATTEMPTS:2}
+    retry-backoff-ms: ${AUTO_TRADING_OPERATION_RETRY_BACKOFF_MS:1000}
+    market-holidays: ${AUTO_TRADING_OPERATION_MARKET_HOLIDAYS:2026-06-03,2026-07-17}
