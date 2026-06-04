@@ -46,6 +46,7 @@ public class AutoTradingOperationScheduler {
 
   private static final String ACTIVE_SLOT = "SHARED_KIS_VIRTUAL_ACCOUNT";
   private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
+  private static final int MIN_PAPER_INTERVAL_SEC = 60;
 
   private final AutoTradingCommandService autoTradingCommandService;
   private final AutoTradingQueryService autoTradingQueryService;
@@ -445,7 +446,7 @@ public class AutoTradingOperationScheduler {
     if (cycles < 1) {
       return Optional.of("invalid_cycles");
     }
-    if (intervalSec < 1) {
+    if (intervalSec < MIN_PAPER_INTERVAL_SEC) {
       return Optional.of("invalid_interval_sec");
     }
     if (retryAttempts < 1) {

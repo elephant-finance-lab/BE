@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -38,6 +39,12 @@ public class MarketIndexRedisService {
           index.value(),
           index.timestamp());
       return true;
+    } catch (DataAccessException e) {
+      log.warn(
+          "market index redis save skipped: key={}, reason=redis_unavailable",
+          market.getRedisKey(),
+          e);
+      return false;
     } catch (JsonProcessingException e) {
       throw new ChartException(ChartErrorCode.MARKET_INDEX_CACHE_SERIALIZE_FAILED, e);
     }
@@ -49,13 +56,12 @@ public class MarketIndexRedisService {
   }
 
   private MarketIndexResDTO.MarketIndex findLatest(MarketIndexMarket market) {
-    String json = stringRedisTemplate.opsForValue().get(market.getRedisKey());
-    if (json == null || json.isBlank()) {
-      log.info("market index redis miss: key={}", market.getRedisKey());
-      return null;
-    }
-
     try {
+      String json = stringRedisTemplate.opsForValue().get(market.getRedisKey());
+      if (json == null || json.isBlank()) {
+        log.info("market index redis miss: key={}", market.getRedisKey());
+        return null;
+      }
       MarketIndexResDTO.MarketIndex index =
           objectMapper.readValue(json, MarketIndexResDTO.MarketIndex.class);
       log.info(
@@ -64,12 +70,15 @@ public class MarketIndexRedisService {
           index.value(),
           index.timestamp());
       return index;
+    } catch (DataAccessException e) {
+      log.warn("market index redis unavailable: key={}", market.getRedisKey(), e);
+      return null;
     } catch (JsonProcessingException e) {
       log.warn(
           "market index redis deserialize failed: key={}, keep cache value unavailable",
           market.getRedisKey(),
           e);
-      throw new ChartException(ChartErrorCode.MARKET_INDEX_CACHE_DESERIALIZE_FAILED, e);
+      return null;
     }
   }
 

@@ -28,6 +28,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -37,16 +38,43 @@ public class AiServerClient {
 
   private final AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stub;
   private final int timeout;
+  private final int healthTimeout;
+  private final int readinessTimeout;
+  private final int recommendationsTimeout;
+  private final int paperStartTimeout;
+  private final int paperStatusTimeout;
+  private final int paperStopTimeout;
 
+  @Autowired
   public AiServerClient(
       AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stub,
-      @Value("${ai.server.timeout}") int timeout) {
+      @Value("${ai.server.timeout}") int timeout,
+      @Value("${ai.server.timeout-health:3}") int healthTimeout,
+      @Value("${ai.server.timeout-readiness:10}") int readinessTimeout,
+      @Value("${ai.server.timeout-recommendations:90}") int recommendationsTimeout,
+      @Value("${ai.server.timeout-paper-start:30}") int paperStartTimeout,
+      @Value("${ai.server.timeout-paper-status:5}") int paperStatusTimeout,
+      @Value("${ai.server.timeout-paper-stop:10}") int paperStopTimeout) {
     this.stub = stub;
     this.timeout = timeout;
+    this.healthTimeout = healthTimeout;
+    this.readinessTimeout = readinessTimeout;
+    this.recommendationsTimeout = recommendationsTimeout;
+    this.paperStartTimeout = paperStartTimeout;
+    this.paperStatusTimeout = paperStatusTimeout;
+    this.paperStopTimeout = paperStopTimeout;
+  }
+
+  AiServerClient(AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stub, int timeout) {
+    this(stub, timeout, timeout, timeout, timeout, timeout, timeout, timeout);
   }
 
   private AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stubWithDeadline() {
-    return stub.withDeadlineAfter(timeout, TimeUnit.SECONDS);
+    return stubWithDeadline(timeout);
+  }
+
+  private AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stubWithDeadline(int seconds) {
+    return stub.withDeadlineAfter(Math.max(1, seconds), TimeUnit.SECONDS);
   }
 
   AiServerException mapToAiServerException(StatusRuntimeException e) {
@@ -91,7 +119,7 @@ public class AiServerClient {
               .setRequestId(UUID.randomUUID().toString())
               .setBundleId(bundleId != null ? bundleId : "")
               .build();
-      HealthCheckResponse response = stubWithDeadline().healthCheck(request);
+      HealthCheckResponse response = stubWithDeadline(healthTimeout).healthCheck(request);
       log.info("[AI Client] 헬스체크: {}", response.getStatus());
       return response;
     } catch (StatusRuntimeException e) {
@@ -107,7 +135,7 @@ public class AiServerClient {
               .setBundleId(bundleId != null ? bundleId : "")
               .setIncludeDetails(true)
               .build();
-      return stubWithDeadline().getServiceReadiness(request);
+      return stubWithDeadline(readinessTimeout).getServiceReadiness(request);
     } catch (StatusRuntimeException e) {
       throw mapToAiServerException(e);
     }
@@ -174,7 +202,8 @@ public class AiServerClient {
       if (topK != null) {
         request.setTopK(topK);
       }
-      GetRecommendationsResponse response = stubWithDeadline().getRecommendations(request.build());
+      GetRecommendationsResponse response =
+          stubWithDeadline(recommendationsTimeout).getRecommendations(request.build());
       log.info(
           "[AI Client] 추천 조회 완료: status={}, count={}",
           response.getStatus(),
@@ -205,7 +234,7 @@ public class AiServerClient {
       if (intervalSec != null) {
         builder.setIntervalSec(intervalSec);
       }
-      return stubWithDeadline().startPaperAutoTrading(builder.build());
+      return stubWithDeadline(paperStartTimeout).startPaperAutoTrading(builder.build());
     } catch (StatusRuntimeException e) {
       throw mapToAiServerException(e);
     }
@@ -218,7 +247,7 @@ public class AiServerClient {
               .setRequestId(requestId)
               .setSessionId(aiSessionId != null ? aiSessionId : "")
               .build();
-      return stubWithDeadline().stopPaperAutoTrading(request);
+      return stubWithDeadline(paperStopTimeout).stopPaperAutoTrading(request);
     } catch (StatusRuntimeException e) {
       throw mapToAiServerException(e);
     }
@@ -228,7 +257,7 @@ public class AiServerClient {
     try {
       GetPaperAutoTradingStatusRequest request =
           GetPaperAutoTradingStatusRequest.newBuilder().setRequestId(requestId).build();
-      return stubWithDeadline().getPaperAutoTradingStatus(request);
+      return stubWithDeadline(paperStatusTimeout).getPaperAutoTradingStatus(request);
     } catch (StatusRuntimeException e) {
       throw mapToAiServerException(e);
     }

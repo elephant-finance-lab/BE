@@ -43,6 +43,8 @@ class RecommendationQueryServiceImplTest {
     ReflectionTestUtils.setField(service, "includeRecommendationDiagnostics", false);
     ReflectionTestUtils.setField(service, "cacheReadEnabled", false);
     ReflectionTestUtils.setField(service, "cacheMaxAgeSeconds", 180L);
+    ReflectionTestUtils.setField(service, "cacheDisplayMaxAgeSeconds", 86_400L);
+    ReflectionTestUtils.setField(service, "allowStaleDisplay", true);
     ReflectionTestUtils.setField(service, "cacheMaxFutureSkewSeconds", 5L);
     ReflectionTestUtils.setField(
         service, "clock", Clock.fixed(Instant.parse("2026-06-01T01:01:00Z"), ZoneOffset.UTC));
@@ -277,8 +279,41 @@ class RecommendationQueryServiceImplTest {
   }
 
   @Test
-  void rejectsStaleCachedRecommendationsBeforeReturningRows() {
+  void returnsStaleCachedRecommendationsForDisplayWithoutCallingAi() {
     ReflectionTestUtils.setField(service, "cacheReadEnabled", true);
+    Recommendation stale =
+        Recommendation.builder()
+            .id(1L)
+            .tickerCode("005930")
+            .companyName("삼성전자")
+            .ranking(1)
+            .modelBundleId("BUNDLE-TEST")
+            .modelGeneratedAt(generatedAt("2026-06-01T09:55:00+09:00"))
+            .modelAsof("2026-06-01T09:54:00+09:00")
+            .build();
+    when(recommendationRepository.findByModelGeneratedAtIsNotNull()).thenReturn(List.of(stale));
+    when(recommendationRepository.findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            generatedAt("2026-06-01T09:55:00+09:00"), "BUNDLE-TEST"))
+        .thenReturn(List.of(stale));
+
+    RecommendationResDTO.RecommendationListDTO result = service.findRecommendationList();
+
+    assertThat(result.getModelReason()).isEqualTo("cached_recommendations");
+    assertThat(result.getMode()).isEqualTo("cached");
+    assertThat(result.getStale()).isTrue();
+    assertThat(result.getStaleReason()).isEqualTo("cache_stale");
+    assertThat(result.getSafeToEnableOrderActions()).isFalse();
+    assertThat(result.getLiveTradingAllowed()).isFalse();
+    verify(recommendationRepository)
+        .findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            generatedAt("2026-06-01T09:55:00+09:00"), "BUNDLE-TEST");
+    verifyNoInteractions(aiServerClient);
+  }
+
+  @Test
+  void rejectsCachedRecommendationsBeyondDisplayWindow() {
+    ReflectionTestUtils.setField(service, "cacheReadEnabled", true);
+    ReflectionTestUtils.setField(service, "cacheDisplayMaxAgeSeconds", 120L);
     Recommendation stale =
         Recommendation.builder()
             .id(1L)
@@ -346,13 +381,100 @@ class RecommendationQueryServiceImplTest {
   @Test
   void findsRecommendationDetailById() {
     Recommendation recommendation =
-        Recommendation.builder().id(1L).ranking(1).tickerCode("005930").companyName("삼성전자").build();
+        Recommendation.builder()
+            .id(1L)
+            .ranking(1)
+            .tickerCode("005930")
+            .companyName("삼성전자")
+            .modelGeneratedAt(generatedAt("2026-06-01T10:00:00+09:00"))
+            .build();
     when(recommendationRepository.findById(1L)).thenReturn(Optional.of(recommendation));
 
     RecommendationResDTO.RecommendationDetailDTO result = service.findRecommendationDetail(1L);
 
     assertThat(result.getRecommendationId()).isEqualTo(1L);
     assertThat(result.getStockCode()).isEqualTo("005930");
+    assertThat(result.getCacheAgeSec()).isEqualTo(60L);
+    assertThat(result.getStale()).isFalse();
+    assertThat(result.getStaleReason()).isNull();
+    assertThat(result.getAdvisoryOnly()).isTrue();
+    assertThat(result.getSafeToEnableOrderActions()).isFalse();
+    assertThat(result.getLiveTradingAllowed()).isFalse();
     verify(recommendationRepository).findById(1L);
+  }
+
+  @Test
+  void marksRecommendationDetailAsStaleWhenGeneratedAtExceedsFreshWindow() {
+    Recommendation recommendation =
+        Recommendation.builder()
+            .id(1L)
+            .ranking(1)
+            .tickerCode("005930")
+            .companyName("삼성전자")
+            .modelGeneratedAt(generatedAt("2026-06-01T09:55:00+09:00"))
+            .build();
+    when(recommendationRepository.findById(1L)).thenReturn(Optional.of(recommendation));
+
+    RecommendationResDTO.RecommendationDetailDTO result = service.findRecommendationDetail(1L);
+
+    assertThat(result.getCacheAgeSec()).isEqualTo(360L);
+    assertThat(result.getStale()).isTrue();
+    assertThat(result.getStaleReason()).isEqualTo("cache_stale");
+    assertThat(result.getSafeToEnableOrderActions()).isFalse();
+    assertThat(result.getLiveTradingAllowed()).isFalse();
+  }
+
+  @Test
+  void rejectsRecommendationDetailBeyondDisplayWindow() {
+    ReflectionTestUtils.setField(service, "cacheDisplayMaxAgeSeconds", 120L);
+    Recommendation recommendation =
+        Recommendation.builder()
+            .id(1L)
+            .ranking(1)
+            .tickerCode("005930")
+            .companyName("삼성전자")
+            .modelGeneratedAt(generatedAt("2026-06-01T09:55:00+09:00"))
+            .build();
+    when(recommendationRepository.findById(1L)).thenReturn(Optional.of(recommendation));
+
+    assertThatThrownBy(() -> service.findRecommendationDetail(1L))
+        .isInstanceOf(GeneralException.class)
+        .extracting("code")
+        .isEqualTo(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+  }
+
+  @Test
+  void rejectsRecommendationDetailByStockCodeWhenStaleDisplayIsDisabled() {
+    ReflectionTestUtils.setField(service, "allowStaleDisplay", false);
+    Recommendation recommendation =
+        Recommendation.builder()
+            .id(1L)
+            .ranking(1)
+            .tickerCode("005930")
+            .companyName("삼성전자")
+            .modelGeneratedAt(generatedAt("2026-06-01T09:55:00+09:00"))
+            .build();
+    when(recommendationRepository.findByTickerCodeIgnoreCase("005930"))
+        .thenReturn(Optional.of(recommendation));
+
+    assertThatThrownBy(() -> service.findRecommendationDetail("005930"))
+        .isInstanceOf(GeneralException.class)
+        .extracting("code")
+        .isEqualTo(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+  }
+
+  @Test
+  void marksRecommendationDetailAsStaleWhenGeneratedAtIsMissing() {
+    Recommendation recommendation =
+        Recommendation.builder().id(1L).ranking(1).tickerCode("005930").companyName("삼성전자").build();
+    when(recommendationRepository.findById(1L)).thenReturn(Optional.of(recommendation));
+
+    RecommendationResDTO.RecommendationDetailDTO result = service.findRecommendationDetail(1L);
+
+    assertThat(result.getCacheAgeSec()).isNull();
+    assertThat(result.getStale()).isTrue();
+    assertThat(result.getStaleReason()).isEqualTo("recommendation_generated_at_missing");
+    assertThat(result.getSafeToEnableOrderActions()).isFalse();
+    assertThat(result.getLiveTradingAllowed()).isFalse();
   }
 }
