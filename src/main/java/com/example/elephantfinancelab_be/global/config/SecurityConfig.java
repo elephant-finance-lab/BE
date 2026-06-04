@@ -47,7 +47,7 @@ public class SecurityConfig {
   private final JwtFilter jwtFilter;
   private final RefreshTokenOriginFilter refreshTokenOriginFilter;
 
-  @Value("${app.cors.allowed-origins:http://localhost:5173}")
+  @Value("${app.cors.allowed-origins:https://elephantfinancelab.site,https://www.elephantfinancelab.site}")
   private String corsAllowedOrigins;
 
   private static final String[] PUBLIC_URLS = {
