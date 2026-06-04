@@ -1,6 +1,6 @@
 app:
   cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:https://elephantfinancelab.vercel.app,http://elephantfinancelab.kro.kr,https://elephantfinancelab.kro.kr}
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:https://elephantfinancelab.site,https://www.elephantfinancelab.site}
   oauth2:
     success-redirect-uri: ${OAUTH2_SUCCESS_REDIRECT_URI:https://elephantfinancelab.vercel.app/auth/callback}
     failure-redirect-uri: ${OAUTH2_FAILURE_REDIRECT_URI:https://elephantfinancelab.vercel.app/login}
