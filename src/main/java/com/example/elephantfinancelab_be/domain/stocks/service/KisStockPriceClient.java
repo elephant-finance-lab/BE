@@ -2,6 +2,7 @@ package com.example.elephantfinancelab_be.domain.stocks.service;
 
 import com.example.elephantfinancelab_be.domain.chart.service.KisAccessTokenClient;
 import com.example.elephantfinancelab_be.domain.stocks.converter.StockConverter;
+import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockInfoResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.entity.Stock;
 import com.example.elephantfinancelab_be.domain.stocks.entity.StockPriceDirection;
@@ -19,6 +20,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.LinkedHashMap;
@@ -47,6 +49,32 @@ public class KisStockPriceClient {
   private final HttpClient httpClient;
 
   public StockResDTO.Summary fetchSummary(Stock stock) {
+    JsonNode output = fetchCurrentPriceOutput(stock);
+    String signCode = textValue(output, "prdy_vrss_sign");
+    return StockConverter.toSummary(
+        stock,
+        positiveLongValue(output, "stck_prpr"),
+        signedLongValue(output, "prdy_vrss", signCode),
+        signedDecimalValue(output, "prdy_ctrt", signCode),
+        signCode,
+        LocalDateTime.now(KOREA_ZONE).withNano(0));
+  }
+
+  public StockInfoResDTO.Price fetchInfoPrice(Stock stock) {
+    JsonNode output = fetchCurrentPriceOutput(stock);
+    return new StockInfoResDTO.Price(
+        optionalPositiveLongValue(output, "stck_lwpr"),
+        optionalPositiveLongValue(output, "stck_hgpr"),
+        optionalPositiveLongValue(output, "w52_lwpr"),
+        optionalPositiveLongValue(output, "w52_hgpr"),
+        optionalPositiveLongValue(output, "stck_oprc"),
+        optionalPositiveLongValue(output, "stck_prpr"),
+        optionalPositiveLongValue(output, "acml_vol"),
+        optionalPositiveLongValue(output, "acml_tr_pbmn"),
+        LocalDate.now(KOREA_ZONE).toString());
+  }
+
+  private JsonNode fetchCurrentPriceOutput(Stock stock) {
     try {
       HttpRequest request =
           HttpRequest.newBuilder()
@@ -83,15 +111,7 @@ public class KisStockPriceClient {
         throw new StockException(StockErrorCode.KIS_STOCK_PRICE_API_FAILED);
       }
 
-      JsonNode output = root.path("output");
-      String signCode = textValue(output, "prdy_vrss_sign");
-      return StockConverter.toSummary(
-          stock,
-          positiveLongValue(output, "stck_prpr"),
-          signedLongValue(output, "prdy_vrss", signCode),
-          signedDecimalValue(output, "prdy_ctrt", signCode),
-          signCode,
-          LocalDateTime.now(KOREA_ZONE).withNano(0));
+      return root.path("output");
     } catch (IOException e) {
       throw new StockException(StockErrorCode.KIS_STOCK_PRICE_API_FAILED, e);
     } catch (InterruptedException e) {
@@ -128,6 +148,25 @@ public class KisStockPriceClient {
 
   private Long positiveLongValue(JsonNode node, String fieldName) {
     return decimalValue(node, fieldName).abs().longValue();
+  }
+
+  private Long optionalPositiveLongValue(JsonNode node, String fieldName) {
+    String value = textValue(node, fieldName);
+    if (value == null) {
+      return null;
+    }
+
+    try {
+      return new BigDecimal(value.trim().replace(",", "")).abs().longValue();
+    } catch (NumberFormatException e) {
+      log.warn(
+          "code={}, message={}, field={}, value={}",
+          StockErrorCode.KIS_STOCK_PRICE_RESPONSE_PARSE_FAILED.getCode(),
+          StockErrorCode.KIS_STOCK_PRICE_RESPONSE_PARSE_FAILED.getMessage(),
+          fieldName,
+          value);
+      return null;
+    }
   }
 
   private Long signedLongValue(JsonNode node, String fieldName, String signCode) {

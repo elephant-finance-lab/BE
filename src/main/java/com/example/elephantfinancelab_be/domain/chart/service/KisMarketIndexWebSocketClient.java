@@ -13,6 +13,7 @@ import java.net.http.WebSocket;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -23,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 @Slf4j
 @Component
@@ -35,6 +37,7 @@ public class KisMarketIndexWebSocketClient {
   private final KisApprovalKeyClient approvalKeyClient;
   private final MarketIndexRealtimeParser marketIndexRealtimeParser;
   private final MarketIndexRedisService marketIndexRedisService;
+  private final MarketIndexPushService marketIndexPushService;
   private final ObjectMapper objectMapper;
   private final HttpClient httpClient;
   private final ScheduledExecutorService reconnectExecutor =
@@ -56,7 +59,8 @@ public class KisMarketIndexWebSocketClient {
       return;
     }
 
-    if (!hasText(kisProperties.getAppKey()) || !hasText(kisProperties.getAppSecret())) {
+    if (!StringUtils.hasText(kisProperties.getAppKey())
+        || !StringUtils.hasText(kisProperties.getAppSecret())) {
       log.warn(
           "code={}, message={}, reason=missing-kis-credentials",
           ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getCode(),
@@ -130,21 +134,17 @@ public class KisMarketIndexWebSocketClient {
 
   private void subscribe(WebSocket socket, String approvalKey, MarketIndexMarket market) {
     try {
-      socket
-          .sendText(subscriptionMessage(approvalKey, market), true)
-          .whenComplete(
-              (unused, throwable) -> {
-                if (throwable != null) {
-                  log.warn(
-                      "code={}, message={}, market={}",
-                      ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getCode(),
-                      ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getMessage(),
-                      market.name(),
-                      throwable);
-                  return;
-                }
-                log.info("한국투자증권 시장 지수 구독 완료. market={}", market.name());
-              });
+      Throwable throwable = sendText(socket, subscriptionMessage(approvalKey, market));
+      if (throwable != null) {
+        log.warn(
+            "code={}, message={}, market={}",
+            ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getCode(),
+            ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getMessage(),
+            market.name(),
+            throwable);
+        return;
+      }
+      log.info("한국투자증권 시장 지수 구독 완료. market={}", market.name());
     } catch (JsonProcessingException e) {
       log.warn(
           "code={}, message={}, market={}",
@@ -179,42 +179,97 @@ public class KisMarketIndexWebSocketClient {
                     market.getKisIndexCode()))));
   }
 
-  private void handleMessage(String message) {
-    if (message.startsWith("{")) {
-      logSubscriptionResponse(message);
+  private void handleMessage(WebSocket socket, String message) {
+    if (!StringUtils.hasText(message)) {
+      log.warn("KIS market index WebSocket message received empty, skip redis update");
       return;
     }
 
-    marketIndexRealtimeParser
-        .parseAll(message)
-        .forEach(
-            parsed -> {
-              marketIndexRedisService.save(parsed.market(), parsed.index());
-              log.debug(
-                  "한국투자증권 시장 지수 메시지 수신. market={}, value={}",
-                  parsed.market().name(),
-                  parsed.index().value());
-            });
+    if (message.startsWith("{")) {
+      handleControlMessage(socket, message);
+      return;
+    }
+
+    log.debug("KIS market index WebSocket message received: length={}", message.length());
+
+    var parsedIndexes = marketIndexRealtimeParser.parseAll(message);
+    if (parsedIndexes.isEmpty()) {
+      log.warn("market index parse failed, keep previous value");
+      return;
+    }
+
+    parsedIndexes.forEach(
+        parsed -> {
+          log.debug(
+              "market index parse succeeded: market={}, value={}, timestamp={}",
+              parsed.market().name(),
+              parsed.index().value(),
+              parsed.index().timestamp());
+          boolean saved = marketIndexRedisService.save(parsed.market(), parsed.index());
+          if (!saved) {
+            log.warn(
+                "market index redis save skipped after parse: key={}",
+                parsed.market().getRedisKey());
+            return;
+          }
+          marketIndexPushService.push(parsed.index());
+        });
   }
 
-  private void logSubscriptionResponse(String message) {
+  void handleControlMessage(WebSocket socket, String message) {
     try {
       JsonNode root = objectMapper.readTree(message);
       JsonNode header = root.path("header");
+      if ("PINGPONG".equals(header.path("tr_id").asText())) {
+        Throwable throwable = sendText(socket, message);
+        if (throwable != null) {
+          log.warn(
+              "code={}, message={}, phase=pingpong",
+              ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getCode(),
+              ChartErrorCode.KIS_MARKET_INDEX_WEBSOCKET_FAILED.getMessage(),
+              throwable);
+          return;
+        }
+        log.debug("한국투자증권 시장 지수 웹소켓 PINGPONG 응답 전송");
+        return;
+      }
+
       JsonNode body = root.path("body");
+      String responseCode = body.path("rt_cd").asText();
+      if (!"0".equals(responseCode)) {
+        log.warn(
+            "한국투자증권 시장 지수 웹소켓 구독 거절. tr_id={}, tr_key={}, rt_cd={}, msg_cd={}, msg1={}",
+            header.path("tr_id").asText(),
+            header.path("tr_key").asText(),
+            responseCode,
+            body.path("msg_cd").asText(),
+            body.path("msg1").asText());
+        return;
+      }
+
       log.info(
-          "한국투자증권 시장 지수 웹소켓 응답. tr_id={}, tr_key={}, rt_cd={}, msg_cd={}",
+          "한국투자증권 시장 지수 웹소켓 응답. tr_id={}, tr_key={}, rt_cd={}, msg_cd={}, msg1={}",
           header.path("tr_id").asText(),
           header.path("tr_key").asText(),
-          body.path("rt_cd").asText(),
-          body.path("msg_cd").asText());
+          responseCode,
+          body.path("msg_cd").asText(),
+          body.path("msg1").asText());
     } catch (JsonProcessingException e) {
       log.debug("한국투자증권 시장 지수 웹소켓 비데이터 메시지를 수신했습니다.");
     }
   }
 
-  private boolean hasText(String value) {
-    return value != null && !value.isBlank();
+  private Throwable sendText(WebSocket socket, String message) {
+    try {
+      synchronized (socket) {
+        socket.sendText(message, true).join();
+      }
+      return null;
+    } catch (CompletionException e) {
+      return e.getCause() == null ? e : e.getCause();
+    } catch (IllegalStateException e) {
+      return e;
+    }
   }
 
   private class KisWebSocketListener implements WebSocket.Listener {
@@ -241,7 +296,7 @@ public class KisMarketIndexWebSocketClient {
       textBuffer.append(data);
       if (last) {
         try {
-          handleMessage(textBuffer.toString());
+          handleMessage(socket, textBuffer.toString());
         } catch (RuntimeException e) {
           log.warn(
               "code={}, message={}, phase=handle-message",

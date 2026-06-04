@@ -3,10 +3,12 @@ package com.example.elephantfinancelab_be.domain.stocks.controller;
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockChartResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockDailyPriceResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockFinancialResDTO;
+import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockInfoResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.dto.res.StockResDTO;
 import com.example.elephantfinancelab_be.domain.stocks.service.query.StockChartQueryService;
 import com.example.elephantfinancelab_be.domain.stocks.service.query.StockDailyPriceQueryService;
 import com.example.elephantfinancelab_be.domain.stocks.service.query.StockFinancialQueryService;
+import com.example.elephantfinancelab_be.domain.stocks.service.query.StockInfoQueryService;
 import com.example.elephantfinancelab_be.domain.stocks.service.query.StockQueryService;
 import com.example.elephantfinancelab_be.global.apiPayload.ApiResponse;
 import com.example.elephantfinancelab_be.global.apiPayload.code.GeneralSuccessCode;
@@ -31,12 +33,24 @@ public class StockController {
   private final StockChartQueryService stockChartQueryService;
   private final StockDailyPriceQueryService stockDailyPriceQueryService;
   private final StockFinancialQueryService stockFinancialQueryService;
+  private final StockInfoQueryService stockInfoQueryService;
 
   @Operation(summary = "종목 상세 상단 조회", description = "국내주식 종목명, 현재가, 전일 대비 정보를 조회합니다.")
   @GetMapping("/{ticker}/summary")
   public ResponseEntity<ApiResponse<StockResDTO.Summary>> getSummary(
       @Parameter(description = "종목코드. 예: 005930") @PathVariable String ticker) {
     StockResDTO.Summary result = stockQueryService.getSummary(ticker);
+    return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
+        .body(ApiResponse.of(GeneralSuccessCode.OK, result));
+  }
+
+  @Operation(summary = "종목 정보 탭 요약 조회", description = "시세 요약과 주요 재무 3개 항목을 한 번에 조회합니다.")
+  @GetMapping("/{ticker}/info")
+  public ResponseEntity<ApiResponse<StockInfoResDTO.Info>> getInfo(
+      @Parameter(description = "종목코드. 예: 005930") @PathVariable String ticker,
+      @Parameter(description = "QUARTER, YEAR. 기본값 QUARTER") @RequestParam(defaultValue = "QUARTER")
+          String period) {
+    StockInfoResDTO.Info result = stockInfoQueryService.getInfo(ticker, period).block();
     return ResponseEntity.status(GeneralSuccessCode.OK.getStatus())
         .body(ApiResponse.of(GeneralSuccessCode.OK, result));
   }

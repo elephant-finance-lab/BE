@@ -16,14 +16,8 @@ public enum StockFinancialStatement {
           new Metric(StockFinancialApiType.INCOME, "매출액", "sale_account"),
           new Metric(StockFinancialApiType.INCOME, "매출 원가", "sale_cost"),
           new Metric(StockFinancialApiType.INCOME, "매출 총 이익", "sale_totl_prfi"),
-          new Metric(StockFinancialApiType.INCOME, "감가상각비", "depr_cost"),
-          new Metric(StockFinancialApiType.INCOME, "판매 및 관리비", "sell_mang"),
           new Metric(StockFinancialApiType.INCOME, "영업 이익", "bsop_prti"),
-          new Metric(StockFinancialApiType.INCOME, "영업 외 수익", "bsop_non_ernn"),
-          new Metric(StockFinancialApiType.INCOME, "영업 외 비용", "bsop_non_expn"),
           new Metric(StockFinancialApiType.INCOME, "경상 이익", "op_prfi"),
-          new Metric(StockFinancialApiType.INCOME, "특별 이익", "spec_prfi"),
-          new Metric(StockFinancialApiType.INCOME, "특별 손실", "spec_loss"),
           new Metric(StockFinancialApiType.INCOME, "당기순이익", "thtr_ntin"))),
   BALANCE(
       "억원",
@@ -35,8 +29,6 @@ public enum StockFinancialStatement {
           new Metric(StockFinancialApiType.BALANCE, "고정부채", "fix_lblt"),
           new Metric(StockFinancialApiType.BALANCE, "부채총계", "total_lblt"),
           new Metric(StockFinancialApiType.BALANCE, "자본금", "cpfn"),
-          new Metric(StockFinancialApiType.BALANCE, "자본 잉여금", "cfp_surp"),
-          new Metric(StockFinancialApiType.BALANCE, "이익 잉여금", "prfi_surp"),
           new Metric(StockFinancialApiType.BALANCE, "자본총계", "total_cptl"))),
   RATIO(
       "혼합",

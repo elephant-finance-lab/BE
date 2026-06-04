@@ -14,13 +14,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -43,6 +48,10 @@ public class KisStockChartClient {
   private static final String KRX_MARKET_DIV_CODE = "J";
   private static final String DAILY_PERIOD_DIV_CODE = "D";
   private static final String ADJUSTED_PRICE = "0";
+  private static final int ONE_WEEK_DISPLAY_POINT_COUNT = 7;
+  private static final int MINUTE_CHART_MAX_REQUEST_COUNT = 16;
+  private static final Duration MINUTE_CHART_PAGE_INTERVAL = Duration.ofMillis(400);
+  private static final Duration MINUTE_CHART_RETRY_BACKOFF = Duration.ofMillis(1200);
   private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
   private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
   private static final LocalTime MARKET_OPEN_TIME = LocalTime.of(9, 0);
@@ -70,10 +79,13 @@ public class KisStockChartClient {
   }
 
   public List<StockChartResDTO.DataPoint> fetchChart(String ticker, StockChartRange range) {
-    JsonNode root =
-        range == StockChartRange.ONE_DAY
-            ? fetchMinuteChart(ticker)
-            : fetchPeriodChart(ticker, range);
+    if (range == StockChartRange.ONE_DAY) {
+      List<StockChartResDTO.DataPoint> points = fetchMinuteChartPoints(ticker);
+      points.sort(Comparator.comparing(StockChartResDTO.DataPoint::time));
+      return points;
+    }
+
+    JsonNode root = fetchPeriodChart(ticker, range);
     if (!"0".equals(root.path("rt_cd").asText())) {
       log.warn(
           "code={}, message={}, msg_cd={}, msg={}",
@@ -84,12 +96,9 @@ public class KisStockChartClient {
       throw new StockException(StockErrorCode.KIS_STOCK_CHART_API_FAILED);
     }
 
-    List<StockChartResDTO.DataPoint> points =
-        range == StockChartRange.ONE_DAY
-            ? toMinuteDataPoints(root.path("output2"))
-            : toPeriodDataPoints(root.path("output2"));
+    List<StockChartResDTO.DataPoint> points = toPeriodDataPoints(root.path("output2"));
     points.sort(Comparator.comparing(StockChartResDTO.DataPoint::time));
-    return points;
+    return displayPoints(points, range);
   }
 
   public List<StockDailyPriceResDTO.Item> fetchDailyPrices(String ticker) {
@@ -109,13 +118,13 @@ public class KisStockChartClient {
     return items;
   }
 
-  private JsonNode fetchMinuteChart(String ticker) {
-    String inputHour = minuteChartInputHour();
+  private JsonNode fetchMinuteChart(String ticker, String inputHour, boolean includePastData) {
     log.debug(
-        "한국투자증권 분봉 차트 API 호출. ticker={}, trId={}, inputHour={}",
+        "한국투자증권 분봉 차트 API 호출. ticker={}, trId={}, inputHour={}, includePastData={}",
         ticker,
         TIME_ITEM_CHART_TR_ID,
-        inputHour);
+        inputHour,
+        includePastData);
     JsonNode root =
         webClient
             .get()
@@ -126,7 +135,7 @@ public class KisStockChartClient {
                         .queryParam("FID_COND_MRKT_DIV_CODE", KRX_MARKET_DIV_CODE)
                         .queryParam("FID_INPUT_ISCD", ticker)
                         .queryParam("FID_INPUT_HOUR_1", inputHour)
-                        .queryParam("FID_PW_DATA_INCU_YN", "Y")
+                        .queryParam("FID_PW_DATA_INCU_YN", includePastData ? "Y" : "N")
                         .queryParam("FID_ETC_CLS_CODE", "")
                         .build())
             .headers(headers -> applyKisHeaders(headers, TIME_ITEM_CHART_TR_ID))
@@ -320,10 +329,169 @@ public class KisStockChartClient {
     }
   }
 
+  private List<StockChartResDTO.DataPoint> fetchMinuteChartPoints(String ticker) {
+    boolean includePastData = shouldIncludePastMinuteData();
+    List<StockChartResDTO.DataPoint> points =
+        fetchMinuteChartPoints(ticker, minuteChartInputHour(), includePastData);
+
+    if (points.isEmpty() && !includePastData) {
+      points = fetchMinuteChartPoints(ticker, MARKET_CLOSE_TIME.format(KIS_TIME_FORMATTER), true);
+    }
+    return points;
+  }
+
+  private List<StockChartResDTO.DataPoint> fetchMinuteChartPoints(
+      String ticker, String firstInputHour, boolean includePastData) {
+    List<StockChartResDTO.DataPoint> collected = new ArrayList<>();
+    Set<String> seenTimes = new HashSet<>();
+    LocalDate targetDate = null;
+    LocalTime inputTime =
+        parseTime(firstInputHour, StockErrorCode.KIS_STOCK_CHART_RESPONSE_PARSE_FAILED);
+
+    for (int requestCount = 0; requestCount < MINUTE_CHART_MAX_REQUEST_COUNT; requestCount++) {
+      JsonNode root;
+      try {
+        root =
+            fetchValidMinuteChart(
+                ticker, inputTime.format(KIS_TIME_FORMATTER), includePastData, requestCount);
+      } catch (StockException e) {
+        if (collected.isEmpty()) {
+          throw e;
+        }
+        log.warn(
+            "분봉 차트 추가 조회 실패로 수집된 데이터만 응답합니다. ticker={}, collectedCount={}",
+            ticker,
+            collected.size());
+        break;
+      }
+
+      List<StockChartResDTO.DataPoint> pagePoints = toMinuteDataPoints(root.path("output2"));
+      if (pagePoints.isEmpty()) {
+        break;
+      }
+
+      if (targetDate == null) {
+        targetDate = targetMinuteChartDate(pagePoints);
+      }
+
+      LocalTime earliestTime = null;
+      for (StockChartResDTO.DataPoint point : pagePoints) {
+        if (!targetDate.equals(pointDateTime(point).toLocalDate())) {
+          continue;
+        }
+
+        LocalTime pointTime = pointDateTime(point).toLocalTime();
+        if (pointTime.isBefore(MARKET_OPEN_TIME) || pointTime.isAfter(MARKET_CLOSE_TIME)) {
+          continue;
+        }
+
+        if (seenTimes.add(point.time())) {
+          collected.add(point);
+        }
+        if (earliestTime == null || pointTime.isBefore(earliestTime)) {
+          earliestTime = pointTime;
+        }
+      }
+
+      if (earliestTime == null || !earliestTime.isAfter(MARKET_OPEN_TIME)) {
+        break;
+      }
+
+      LocalTime nextInputTime = earliestTime.minusMinutes(1);
+      if (nextInputTime.isBefore(MARKET_OPEN_TIME)) {
+        nextInputTime = MARKET_OPEN_TIME;
+      }
+      if (!nextInputTime.isBefore(inputTime)) {
+        break;
+      }
+      inputTime = nextInputTime;
+    }
+
+    return collected;
+  }
+
+  private JsonNode fetchValidMinuteChart(
+      String ticker, String inputHour, boolean includePastData, int requestCount) {
+    waitBeforeMinuteChartRequest(requestCount);
+    try {
+      JsonNode root = fetchMinuteChart(ticker, inputHour, includePastData);
+      validateKisChartResponse(root);
+      return root;
+    } catch (StockException e) {
+      log.warn(
+          "분봉 차트 API 호출 실패로 재시도합니다. ticker={}, inputHour={}, retryBackoffMs={}",
+          ticker,
+          inputHour,
+          MINUTE_CHART_RETRY_BACKOFF.toMillis());
+      sleep(MINUTE_CHART_RETRY_BACKOFF);
+      JsonNode root = fetchMinuteChart(ticker, inputHour, includePastData);
+      validateKisChartResponse(root);
+      return root;
+    }
+  }
+
+  private void waitBeforeMinuteChartRequest(int requestCount) {
+    if (requestCount <= 0) {
+      return;
+    }
+    sleep(MINUTE_CHART_PAGE_INTERVAL);
+  }
+
+  private void sleep(Duration duration) {
+    try {
+      Thread.sleep(duration.toMillis());
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new StockException(StockErrorCode.KIS_STOCK_CHART_API_FAILED, e);
+    }
+  }
+
+  private void validateKisChartResponse(JsonNode root) {
+    if ("0".equals(root.path("rt_cd").asText())) {
+      return;
+    }
+
+    log.warn(
+        "code={}, message={}, msg_cd={}, msg={}",
+        StockErrorCode.KIS_STOCK_CHART_API_FAILED.getCode(),
+        StockErrorCode.KIS_STOCK_CHART_API_FAILED.getMessage(),
+        root.path("msg_cd").asText(),
+        root.path("msg1").asText());
+    throw new StockException(StockErrorCode.KIS_STOCK_CHART_API_FAILED);
+  }
+
+  private LocalDate targetMinuteChartDate(List<StockChartResDTO.DataPoint> points) {
+    Map<LocalDate, Integer> countByDate = new HashMap<>();
+    for (StockChartResDTO.DataPoint point : points) {
+      LocalDate date = pointDateTime(point).toLocalDate();
+      countByDate.merge(date, 1, Integer::sum);
+    }
+
+    return countByDate.entrySet().stream()
+        .max(
+            Comparator.<Map.Entry<LocalDate, Integer>>comparingInt(Map.Entry::getValue)
+                .thenComparing(Map.Entry::getKey))
+        .map(Map.Entry::getKey)
+        .orElseThrow(
+            () -> new StockException(StockErrorCode.KIS_STOCK_CHART_RESPONSE_PARSE_FAILED));
+  }
+
+  private LocalDateTime pointDateTime(StockChartResDTO.DataPoint point) {
+    try {
+      return LocalDateTime.parse(point.time(), MINUTE_FORMATTER);
+    } catch (DateTimeParseException e) {
+      throw new StockException(StockErrorCode.KIS_STOCK_CHART_RESPONSE_PARSE_FAILED, e);
+    }
+  }
+
+  private boolean shouldIncludePastMinuteData() {
+    return LocalTime.now(KOREA_ZONE).withNano(0).isBefore(MARKET_OPEN_TIME);
+  }
+
   private String minuteChartInputHour() {
     LocalTime now = LocalTime.now(KOREA_ZONE).withNano(0);
     if (now.isBefore(MARKET_OPEN_TIME)) {
-      return MARKET_OPEN_TIME.format(KIS_TIME_FORMATTER);
+      return MARKET_CLOSE_TIME.format(KIS_TIME_FORMATTER);
     }
     if (now.isAfter(MARKET_CLOSE_TIME)) {
       return MARKET_CLOSE_TIME.format(KIS_TIME_FORMATTER);
@@ -373,6 +541,15 @@ public class KisStockChartClient {
     return points;
   }
 
+  private List<StockChartResDTO.DataPoint> displayPoints(
+      List<StockChartResDTO.DataPoint> points, StockChartRange range) {
+    if (range != StockChartRange.ONE_WEEK || points.size() <= ONE_WEEK_DISPLAY_POINT_COUNT) {
+      return points;
+    }
+    return new ArrayList<>(
+        points.subList(points.size() - ONE_WEEK_DISPLAY_POINT_COUNT, points.size()));
+  }
+
   private List<StockDailyPriceResDTO.Item> toDailyPriceItems(JsonNode output) {
     List<StockDailyPriceResDTO.Item> items = new ArrayList<>();
     if (!output.isArray()) {
@@ -396,7 +573,7 @@ public class KisStockChartClient {
                   textValue(node, "prdy_vrss_sign"),
                   StockErrorCode.KIS_STOCK_DAILY_PRICE_RESPONSE_PARSE_FAILED),
               volume,
-              tradingValue(node, closePrice, volume)));
+              tradingValue(node)));
     }
     return items;
   }
@@ -494,13 +671,13 @@ public class KisStockChartClient {
     };
   }
 
-  private Long tradingValue(JsonNode node, Long closePrice, Long volume) {
+  private Long tradingValue(JsonNode node) {
     String value = textValue(node, "acml_tr_pbmn");
-    if (value != null) {
-      return positiveLongValue(
-          node, "acml_tr_pbmn", StockErrorCode.KIS_STOCK_DAILY_PRICE_RESPONSE_PARSE_FAILED);
+    if (value == null) {
+      return null;
     }
-    return BigDecimal.valueOf(closePrice).multiply(BigDecimal.valueOf(volume)).longValue();
+    return positiveLongValue(
+        node, "acml_tr_pbmn", StockErrorCode.KIS_STOCK_DAILY_PRICE_RESPONSE_PARSE_FAILED);
   }
 
   private String textValue(JsonNode node, String fieldName) {

@@ -10,10 +10,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -25,6 +29,10 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.util.UriComponentsBuilder;
 
 @Configuration
 @EnableWebSecurity
@@ -37,6 +45,10 @@ public class SecurityConfig {
   private final CustomLogoutSuccessHandler customLogoutSuccessHandler;
   private final OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
   private final JwtFilter jwtFilter;
+  private final RefreshTokenOriginFilter refreshTokenOriginFilter;
+
+  @Value("${app.cors.allowed-origins:http://localhost:5173}")
+  private String corsAllowedOrigins;
 
   private static final String[] PUBLIC_URLS = {
     "/",
@@ -79,12 +91,34 @@ public class SecurityConfig {
   @Bean
   public AuthenticationFailureHandler oAuth2LoginFailureHandler() {
     return (request, response, exception) -> {
-      response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-      response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-      response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-      objectMapper.writeValue(
-          response.getOutputStream(), ApiResponse.onFailure(GeneralErrorCode.UNAUTHORIZED, null));
+      String failureRedirectUri =
+          env.getProperty("app.oauth2.failure-redirect-uri", "http://localhost:5173/login");
+      String redirectUri =
+          UriComponentsBuilder.fromUriString(failureRedirectUri)
+              .queryParam("error", "oauth_failed")
+              .build()
+              .toUriString();
+
+      response.sendRedirect(redirectUri);
     };
+  }
+
+  @Bean
+  public CorsConfigurationSource corsConfigurationSource() {
+    CorsConfiguration configuration = new CorsConfiguration();
+    configuration.setAllowedOrigins(
+        Arrays.stream(corsAllowedOrigins.split(","))
+            .map(String::trim)
+            .filter(origin -> !origin.isBlank())
+            .toList());
+    configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+    configuration.setAllowedHeaders(List.of("*"));
+    configuration.setExposedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.SET_COOKIE));
+    configuration.setAllowCredentials(true);
+
+    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+    source.registerCorsConfiguration("/**", configuration);
+    return source;
   }
 
   @Bean
@@ -94,7 +128,8 @@ public class SecurityConfig {
       AccessDeniedHandler jsonAccessDeniedHandler)
       throws Exception {
 
-    http.csrf(AbstractHttpConfigurer::disable)
+    http.cors(Customizer.withDefaults())
+        .csrf(AbstractHttpConfigurer::disable)
         .httpBasic(AbstractHttpConfigurer::disable)
         .formLogin(AbstractHttpConfigurer::disable)
         .sessionManagement(
@@ -130,6 +165,7 @@ public class SecurityConfig {
       http.httpBasic(Customizer.withDefaults());
     }
 
+    http.addFilterBefore(refreshTokenOriginFilter, UsernamePasswordAuthenticationFilter.class);
     http.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
     http.logout(

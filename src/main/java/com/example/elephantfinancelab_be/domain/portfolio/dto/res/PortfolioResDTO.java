@@ -17,6 +17,12 @@ public class PortfolioResDTO {
     private Long totalProfit;
     private Double totalProfitRate;
     private List<PositionSummary> positions;
+    private Long totalAssetAmount;
+    private Long stockEvaluationAmount;
+    private Long cashAmount;
+    private Long totalProfitLossAmount;
+    private Double totalProfitLossRate;
+    private List<PositionSummary> holdings;
   }
 
   @Getter
@@ -29,6 +35,14 @@ public class PortfolioResDTO {
     private Long evalAmount;
     private Double profitRate;
     private Double weight;
+    private String stockCode;
+    private String stockName;
+    private Long averagePrice;
+    private Long currentPrice;
+    private Long evaluationAmount;
+    private Long profitLossAmount;
+    private Double profitLossRate;
+    private Double weightRate;
   }
 
   @Getter
@@ -68,6 +82,7 @@ public class PortfolioResDTO {
     private int size;
     private boolean hasNext;
     private List<TradeDetail> trades;
+    private List<TradeDetail> items;
   }
 
   @Getter
@@ -82,5 +97,22 @@ public class PortfolioResDTO {
     private Long price;
     private Long totalAmount;
     private LocalDateTime tradedAt;
+    private String tradeDate;
+    private TradeType side;
+    private String stockCode;
+    private String stockName;
+    private Long amount;
+  }
+
+  @Getter
+  @Builder
+  @AllArgsConstructor
+  public static class HoldingAiDetail {
+    private String tickerCode;
+    private String companyName;
+    private Double aiHitRate;
+    private String tradeReason;
+    private String futureStrategy;
+    private LocalDateTime generatedAt;
   }
 }

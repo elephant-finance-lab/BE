@@ -6,7 +6,4 @@ import com.example.elephantfinancelab_be.domain.recommendation.dto.res.Recommend
 public interface RecommendationCommandService {
   RecommendationResDTO.RecommendationSelectDTO saveSelectedRecommendations(
       Long userId, RecommendationReqDTO.SelectRecommendationDTO request);
-
-  RecommendationResDTO.PurchaseOptionDTO savePurchaseOption(
-      Long userId, RecommendationReqDTO.PurchaseOptionRequestDTO request);
 }

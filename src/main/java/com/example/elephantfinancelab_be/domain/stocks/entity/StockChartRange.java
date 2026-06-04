@@ -37,7 +37,7 @@ public enum StockChartRange {
   public LocalDate startDate(LocalDate today) {
     return switch (this) {
       case ONE_DAY -> today;
-      case ONE_WEEK -> today.minusWeeks(1);
+      case ONE_WEEK -> today.minusWeeks(3);
       case THREE_MONTHS -> today.minusMonths(3);
       case ONE_YEAR -> today.minusYears(1);
       case FIVE_YEARS -> today.minusYears(5);

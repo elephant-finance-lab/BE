@@ -7,9 +7,10 @@ import com.example.elephantfinancelab_be.domain.stocks.entity.StockFinancialPeri
 import com.example.elephantfinancelab_be.domain.stocks.entity.StockFinancialStatement;
 import com.example.elephantfinancelab_be.domain.stocks.exception.StockException;
 import com.example.elephantfinancelab_be.domain.stocks.exception.code.StockErrorCode;
-import com.example.elephantfinancelab_be.domain.stocks.repository.StockRepository;
 import com.example.elephantfinancelab_be.domain.stocks.service.KisStockFinancialClient;
 import com.example.elephantfinancelab_be.domain.stocks.service.StockFinancialRedisService;
+import com.example.elephantfinancelab_be.domain.stocks.service.StockResolverService;
+import com.example.elephantfinancelab_be.domain.stocks.service.StockSnapshotPersistenceService;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -34,8 +35,9 @@ public class StockFinancialQueryServiceImpl implements StockFinancialQueryServic
   private static final int COLUMN_COUNT = 4;
   private static final String PERIOD_FIELD_NAME = "stac_yymm";
 
-  private final StockRepository stockRepository;
+  private final StockResolverService stockResolverService;
   private final StockFinancialRedisService stockFinancialRedisService;
+  private final StockSnapshotPersistenceService stockSnapshotPersistenceService;
   private final KisStockFinancialClient kisStockFinancialClient;
 
   @Override
@@ -43,28 +45,103 @@ public class StockFinancialQueryServiceImpl implements StockFinancialQueryServic
       String ticker, String statement, String period) {
     StockFinancialStatement financialStatement = StockFinancialStatement.from(statement);
     StockFinancialPeriod financialPeriod = StockFinancialPeriod.from(period);
-    Stock stock =
-        stockRepository
-            .findByTicker(normalizeTicker(ticker))
-            .orElseThrow(() -> new StockException(StockErrorCode.STOCK_NOT_FOUND));
+    String normalizedTicker = normalizeTicker(ticker);
 
     StockFinancialResDTO.Financial cachedFinancial =
-        findCachedFinancial(stock, financialStatement, financialPeriod);
+        findCachedFinancial(normalizedTicker, financialStatement, financialPeriod);
     if (cachedFinancial != null) {
+      StockFinancialResDTO.Financial alignedFinancial =
+          alignFinancialRows(cachedFinancial, financialStatement, financialPeriod);
       log.info(
           "종목 재무제표 캐시 조회 성공. ticker={}, statement={}, period={}",
-          stock.getTicker(),
+          normalizedTicker,
           financialStatement,
           financialPeriod);
-      return cachedFinancial;
+      return alignedFinancial;
+    }
+
+    Stock stock = stockResolverService.resolve(normalizedTicker);
+    StockFinancialResDTO.Financial storedFinancial =
+        findStoredFinancial(stock.getTicker(), financialStatement, financialPeriod);
+    if (storedFinancial != null) {
+      StockFinancialResDTO.Financial alignedFinancial =
+          alignFinancialRows(storedFinancial, financialStatement, financialPeriod);
+      saveFinancialCache(alignedFinancial);
+      log.info(
+          "종목 재무제표 DB snapshot 조회 성공. ticker={}, statement={}, period={}",
+          normalizedTicker,
+          financialStatement,
+          financialPeriod);
+      return alignedFinancial;
     }
 
     Map<StockFinancialApiType, List<JsonNode>> outputByApi =
         fetchOutputByApi(stock.getTicker(), financialStatement, financialPeriod);
     StockFinancialResDTO.Financial financial =
         toFinancialResponse(stock, financialStatement, financialPeriod, outputByApi);
-    saveFinancialCache(stock, financial);
+    saveFinancialSnapshot(stock, financial);
+    saveFinancialCache(financial);
     return financial;
+  }
+
+  private StockFinancialResDTO.Financial findStoredFinancial(
+      String ticker, StockFinancialStatement statement, StockFinancialPeriod period) {
+    try {
+      return stockSnapshotPersistenceService.findFinancial(ticker, statement, period);
+    } catch (RuntimeException e) {
+      log.warn(
+          "종목 재무제표 DB snapshot 조회 실패로 KIS 조회를 계속합니다. ticker={}, statement={}, period={}",
+          ticker,
+          statement,
+          period,
+          e);
+      return null;
+    }
+  }
+
+  private StockFinancialResDTO.Financial alignFinancialRows(
+      StockFinancialResDTO.Financial financial,
+      StockFinancialStatement statement,
+      StockFinancialPeriod period) {
+    List<String> allowedLabels =
+        statement.getMetrics().stream().map(StockFinancialStatement.Metric::label).toList();
+    List<StockFinancialResDTO.Row> rows =
+        allowedLabels.stream()
+            .map(label -> findRow(financial, label))
+            .filter(Objects::nonNull)
+            .toList();
+
+    return new StockFinancialResDTO.Financial(
+        financial.ticker(),
+        financial.nameKor(),
+        statement,
+        period,
+        statement.getUnit(),
+        financial.columns(),
+        rows);
+  }
+
+  private StockFinancialResDTO.Row findRow(StockFinancialResDTO.Financial financial, String label) {
+    if (financial.rows() == null) {
+      return null;
+    }
+    return financial.rows().stream()
+        .filter(row -> label.equals(row.label()))
+        .findFirst()
+        .orElse(null);
+  }
+
+  private void saveFinancialSnapshot(Stock stock, StockFinancialResDTO.Financial financial) {
+    try {
+      stockSnapshotPersistenceService.saveFinancial(stock, financial);
+    } catch (RuntimeException e) {
+      log.warn(
+          "종목 재무제표 DB snapshot 저장 실패를 무시합니다. ticker={}, statement={}, period={}",
+          stock.getTicker(),
+          financial.statement(),
+          financial.period(),
+          e);
+    }
   }
 
   private Map<StockFinancialApiType, List<JsonNode>> fetchOutputByApi(
@@ -255,15 +332,15 @@ public class StockFinancialQueryServiceImpl implements StockFinancialQueryServic
   }
 
   private StockFinancialResDTO.Financial findCachedFinancial(
-      Stock stock, StockFinancialStatement statement, StockFinancialPeriod period) {
+      String ticker, StockFinancialStatement statement, StockFinancialPeriod period) {
     try {
-      return stockFinancialRedisService.find(stock.getTicker(), statement, period);
+      return stockFinancialRedisService.find(ticker, statement, period);
     } catch (RuntimeException e) {
       log.warn(
           "code={}, message={}, ticker={}, statement={}, period={}",
           StockErrorCode.STOCK_FINANCIAL_CACHE_DESERIALIZE_FAILED.getCode(),
           StockErrorCode.STOCK_FINANCIAL_CACHE_DESERIALIZE_FAILED.getMessage(),
-          stock.getTicker(),
+          ticker,
           statement,
           period,
           e);
@@ -271,7 +348,7 @@ public class StockFinancialQueryServiceImpl implements StockFinancialQueryServic
     }
   }
 
-  private void saveFinancialCache(Stock stock, StockFinancialResDTO.Financial financial) {
+  private void saveFinancialCache(StockFinancialResDTO.Financial financial) {
     try {
       stockFinancialRedisService.save(financial);
     } catch (RuntimeException e) {
@@ -279,7 +356,7 @@ public class StockFinancialQueryServiceImpl implements StockFinancialQueryServic
           "code={}, message={}, ticker={}, statement={}, period={}",
           StockErrorCode.STOCK_FINANCIAL_CACHE_SERIALIZE_FAILED.getCode(),
           StockErrorCode.STOCK_FINANCIAL_CACHE_SERIALIZE_FAILED.getMessage(),
-          stock.getTicker(),
+          financial.ticker(),
           financial.statement(),
           financial.period(),
           e);

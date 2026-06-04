@@ -4,6 +4,7 @@ import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import javax.crypto.SecretKey;
 import lombok.RequiredArgsConstructor;
@@ -64,6 +65,23 @@ public class JwtProvider {
         .parseSignedClaims(token)
         .getPayload()
         .getSubject();
+  }
+
+  public Optional<String> getUserIdAllowExpired(String token) {
+    try {
+      String subject =
+          Jwts.parser()
+              .verifyWith(getSigningKey())
+              .build()
+              .parseSignedClaims(token)
+              .getPayload()
+              .getSubject();
+      return Optional.ofNullable(subject);
+    } catch (ExpiredJwtException e) {
+      return Optional.ofNullable(e.getClaims().getSubject());
+    } catch (JwtException | IllegalArgumentException e) {
+      return Optional.empty();
+    }
   }
 
   public boolean validateToken(String token) {

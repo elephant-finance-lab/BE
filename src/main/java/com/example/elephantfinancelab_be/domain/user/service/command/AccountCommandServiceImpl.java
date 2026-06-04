@@ -11,7 +11,6 @@ import com.example.elephantfinancelab_be.domain.user.exception.code.AccountError
 import com.example.elephantfinancelab_be.domain.user.exception.code.UserErrorCode;
 import com.example.elephantfinancelab_be.domain.user.repository.AccountRepository;
 import com.example.elephantfinancelab_be.domain.user.repository.UserRepository;
-import com.example.elephantfinancelab_be.domain.user.service.KisBalanceClient;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,7 +22,6 @@ public class AccountCommandServiceImpl implements AccountCommandService {
 
   private final AccountRepository accountRepository;
   private final UserRepository userRepository;
-  private final KisBalanceClient kisBalanceClient;
 
   @Override
   public UserResDTO.AccountId saveAccount(Long userId, UserReqDTO.CreateAccount request) {
@@ -34,10 +32,6 @@ public class AccountCommandServiceImpl implements AccountCommandService {
 
     if (accountRepository.existsByAccountNumber(request.getAccountNumber())) {
       throw new AccountException(AccountErrorCode.ACCOUNT_ALREADY_EXISTS);
-    }
-
-    if (!kisBalanceClient.isValidAccount(request.getAccountNumber())) {
-      throw new AccountException(AccountErrorCode.ACCOUNT_INVALID);
     }
 
     Account account = AccountConverter.toEntity(user, request);

@@ -12,6 +12,8 @@ spring:
     redis:
       host: localhost
       port: 6379
+  kafka:
+    bootstrap-servers: localhost:9092
 
   jpa:
     hibernate:
@@ -35,8 +37,57 @@ jwt:
   refresh-expiration: 1209600000
 
 kis:
+  mode: real
   app-key: test-app-key
   app-secret: test-app-secret
   base-url: https://openapi.koreainvestment.com:9443
   websocket-url: ws://ops.koreainvestment.com:21000
   websocket-enabled: false
+
+recommendation:
+  fresh-max-age-sec: 180
+  display-max-age-sec: 86400
+  allow-stale-fallback: false
+  stale-fallback-max-age-sec: 86400
+  refresh-stale-before-return: true
+  minimum-ai-response-count: 1
+  minimum-cache-batch-size: 1
+
+ai:
+  server:
+    host: localhost
+    port: 50051
+    timeout: 5
+    timeout-health: 3
+    timeout-readiness: 10
+    timeout-recommendations: 5
+    timeout-paper-start: 30
+    timeout-paper-status: 5
+    timeout-paper-stop: 10
+  paper-auto:
+    bundle-id: BUNDLE-TEST
+    confirm-phrase: PAPER_AUTO_OK
+  recommendations:
+    bundle-id: BUNDLE-TEST
+    top-k: 10
+    include-diagnostics: false
+    cache-read-enabled: false
+    cache:
+      max-age-seconds: ${recommendation.fresh-max-age-sec}
+      display-max-age-seconds: ${recommendation.display-max-age-sec}
+      allow-stale-display: true
+      max-future-skew-seconds: 5
+    refresh:
+      enabled: false
+      fixed-delay-ms: 60000
+      initial-delay-ms: 10000
+      market-hours-only: true
+      market-open: "09:00"
+      market-close: "15:30"
+      market-holidays: "2026-06-03,2026-07-17"
+
+auto-trading:
+  kafka:
+    enabled: false
+    topic: elephant-paper-trading-events
+    group-id: elephant-be-auto-trading-test

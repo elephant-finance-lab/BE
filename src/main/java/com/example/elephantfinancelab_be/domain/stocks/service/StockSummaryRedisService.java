@@ -15,8 +15,8 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class StockSummaryRedisService {
 
-  private static final String SUMMARY_KEY_PREFIX = "stock:summary:";
-  private static final Duration SUMMARY_CACHE_TTL = Duration.ofSeconds(30);
+  private static final String SUMMARY_KEY_PREFIX = "stock:summary:v2:";
+  private static final Duration SUMMARY_CACHE_TTL = Duration.ofMinutes(5);
 
   private final StringRedisTemplate stringRedisTemplate;
   private final ObjectMapper objectMapper;

@@ -11,6 +11,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,12 +25,30 @@ public class KisApprovalKeyClient {
 
   private static final String APPROVAL_PATH = "/oauth2/Approval";
   private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
+  private static final Duration APPROVAL_KEY_REUSE_DURATION = Duration.ofHours(23);
 
   private final KisProperties kisProperties;
   private final ObjectMapper objectMapper;
   private final HttpClient httpClient;
 
-  public String issueApprovalKey() {
+  private CachedApprovalKey cachedApprovalKey;
+
+  public synchronized String issueApprovalKey() {
+    Instant now = Instant.now();
+    if (cachedApprovalKey != null && cachedApprovalKey.expiresAt().isAfter(now)) {
+      log.debug("한국투자증권 웹소켓 접속키 재사용");
+      return cachedApprovalKey.value();
+    }
+
+    String approvalKey = requestApprovalKey();
+    if (!hasText(approvalKey)) {
+      throw new ChartException(ChartErrorCode.KIS_APPROVAL_KEY_FAILED);
+    }
+    cachedApprovalKey = new CachedApprovalKey(approvalKey, now.plus(APPROVAL_KEY_REUSE_DURATION));
+    return approvalKey;
+  }
+
+  private String requestApprovalKey() {
     try {
       HttpRequest request =
           HttpRequest.newBuilder()
@@ -53,7 +72,7 @@ public class KisApprovalKeyClient {
 
       JsonNode root = objectMapper.readTree(response.body());
       String approvalKey = root.path("approval_key").asText();
-      if (approvalKey == null || approvalKey.isBlank()) {
+      if (!hasText(approvalKey)) {
         throw new ChartException(ChartErrorCode.KIS_APPROVAL_KEY_FAILED);
       }
 
@@ -84,4 +103,10 @@ public class KisApprovalKeyClient {
             "secretkey",
             kisProperties.getAppSecret()));
   }
+
+  private boolean hasText(String value) {
+    return value != null && !value.isBlank();
+  }
+
+  private record CachedApprovalKey(String value, Instant expiresAt) {}
 }
