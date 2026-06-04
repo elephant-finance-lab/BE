@@ -48,9 +48,14 @@ class RecommendationQueryServiceImplTest {
     ReflectionTestUtils.setField(service, "recommendationTopK", 10);
     ReflectionTestUtils.setField(service, "includeRecommendationDiagnostics", false);
     ReflectionTestUtils.setField(service, "cacheReadEnabled", false);
-    ReflectionTestUtils.setField(service, "cacheMaxAgeSeconds", 180L);
-    ReflectionTestUtils.setField(service, "cacheDisplayMaxAgeSeconds", 86_400L);
+    ReflectionTestUtils.setField(service, "freshMaxAgeSec", 180L);
+    ReflectionTestUtils.setField(service, "displayMaxAgeSec", 86_400L);
     ReflectionTestUtils.setField(service, "allowStaleDisplay", true);
+    ReflectionTestUtils.setField(service, "allowStaleFallback", false);
+    ReflectionTestUtils.setField(service, "staleFallbackMaxAgeSec", 604_800L);
+    ReflectionTestUtils.setField(service, "refreshStaleBeforeReturn", true);
+    ReflectionTestUtils.setField(service, "minimumAiResponseCount", 1);
+    ReflectionTestUtils.setField(service, "minimumCacheBatchSize", 1);
     ReflectionTestUtils.setField(service, "cacheMaxFutureSkewSeconds", 5L);
     ReflectionTestUtils.setField(
         service, "clock", Clock.fixed(Instant.parse("2026-06-01T01:01:00Z"), ZoneOffset.UTC));
@@ -285,8 +290,164 @@ class RecommendationQueryServiceImplTest {
   }
 
   @Test
-  void returnsStaleCachedRecommendationsForDisplayWithoutCallingAi() {
+  void refreshesDisplayableStaleCachedRecommendationsBeforeReturningCache() {
     ReflectionTestUtils.setField(service, "cacheReadEnabled", true);
+    Recommendation stale =
+        Recommendation.builder()
+            .id(1L)
+            .tickerCode("005930")
+            .companyName("삼성전자")
+            .ranking(1)
+            .modelBundleId("BUNDLE-TEST")
+            .modelGeneratedAt(generatedAt("2026-06-01T09:55:00+09:00"))
+            .modelAsof("2026-06-01T09:54:00+09:00")
+            .build();
+    Recommendation refreshed =
+        Recommendation.builder().id(2L).tickerCode("000660").companyName("SK하이닉스").build();
+    RecommendationItem refreshedItem =
+        RecommendationItem.newBuilder()
+            .setRecommendationId("MODEL-REFRESHED")
+            .setStockCode("000660")
+            .setStockName("SK하이닉스")
+            .setRanking(1)
+            .setScore(0.95)
+            .setReason("REFRESHED_MODEL_SIGNAL")
+            .setRiskLevel("low")
+            .build();
+    GetRecommendationsResponse response =
+        GetRecommendationsResponse.newBuilder()
+            .setStatus("PASS")
+            .setReason("recommendations_ready")
+            .setGeneratedAt("2026-06-01T10:01:00+09:00")
+            .setBundleId("BUNDLE-REFRESHED")
+            .setModelVersion("v3")
+            .setAsof("2026-06-01T10:00:00+09:00")
+            .setMode("active")
+            .addRecommendations(refreshedItem)
+            .build();
+    when(recommendationRepository.findByModelGeneratedAtIsNotNull()).thenReturn(List.of(stale));
+    when(recommendationRepository.findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            generatedAt("2026-06-01T09:55:00+09:00"), "BUNDLE-TEST"))
+        .thenReturn(List.of(stale));
+    when(aiServerClient.getRecommendations("BUNDLE-TEST", 10, false)).thenReturn(response);
+    when(recommendationRepository.findByTickerCodeIgnoreCase("000660"))
+        .thenReturn(Optional.of(refreshed));
+    when(recommendationRepository.saveAll(org.mockito.ArgumentMatchers.anyList()))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    RecommendationResDTO.RecommendationListDTO result = service.findRecommendationList();
+
+    assertThat(result.getModelReason()).isEqualTo("recommendations_ready");
+    assertThat(result.getBundleId()).isEqualTo("BUNDLE-REFRESHED");
+    assertThat(result.getMode()).isEqualTo("active");
+    assertThat(result.getRecommendations())
+        .extracting(RecommendationResDTO.RecommendationInfoDTO::getStockCode)
+        .containsExactly("000660");
+    assertThat(refreshed.getModelGeneratedAt()).isEqualTo(generatedAt("2026-06-01T10:01:00+09:00"));
+    verify(recommendationRepository)
+        .findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            generatedAt("2026-06-01T09:55:00+09:00"), "BUNDLE-TEST");
+    verify(aiServerClient).getRecommendations("BUNDLE-TEST", 10, false);
+    verify(recommendationRepository).saveAll(org.mockito.ArgumentMatchers.anyList());
+  }
+
+  @Test
+  void returnsDisplayableStaleCacheWhenAiRefreshFails() {
+    ReflectionTestUtils.setField(service, "cacheReadEnabled", true);
+    Recommendation stale =
+        Recommendation.builder()
+            .id(1L)
+            .tickerCode("005930")
+            .companyName("삼성전자")
+            .ranking(1)
+            .modelBundleId("BUNDLE-TEST")
+            .modelGeneratedAt(generatedAt("2026-06-01T09:55:00+09:00"))
+            .modelAsof("2026-06-01T09:54:00+09:00")
+            .build();
+    when(recommendationRepository.findByModelGeneratedAtIsNotNull()).thenReturn(List.of(stale));
+    when(recommendationRepository.findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            generatedAt("2026-06-01T09:55:00+09:00"), "BUNDLE-TEST"))
+        .thenReturn(List.of(stale));
+    when(aiServerClient.getRecommendations("BUNDLE-TEST", 10, false))
+        .thenReturn(
+            GetRecommendationsResponse.newBuilder()
+                .setStatus("BLOCKED")
+                .setReason("quant_agent_unavailable")
+                .build());
+
+    RecommendationResDTO.RecommendationListDTO result = service.findRecommendationList();
+
+    assertThat(result.getModelReason()).isEqualTo("stale_cache_fallback_ai_refresh_failed");
+    assertThat(result.getMode()).isEqualTo("cached");
+    assertThat(result.getStale()).isTrue();
+    assertThat(result.getStaleReason()).isEqualTo("ai_refresh_failed_displayable_stale_cache");
+    assertThat(result.getCacheAgeSec()).isEqualTo(360L);
+    assertThat(result.getRecommendations())
+        .extracting(RecommendationResDTO.RecommendationInfoDTO::getStockCode)
+        .containsExactly("005930");
+    verify(aiServerClient).getRecommendations("BUNDLE-TEST", 10, false);
+    verify(recommendationRepository, never()).saveAll(org.mockito.ArgumentMatchers.anyList());
+  }
+
+  @Test
+  void returnsDisplayableStaleCacheWhenAiPassResponseIsUnderfilled() {
+    ReflectionTestUtils.setField(service, "cacheReadEnabled", true);
+    ReflectionTestUtils.setField(service, "minimumAiResponseCount", 10);
+    Recommendation stale =
+        Recommendation.builder()
+            .id(1L)
+            .tickerCode("005930")
+            .companyName("삼성전자")
+            .ranking(1)
+            .modelBundleId("BUNDLE-TEST")
+            .modelGeneratedAt(generatedAt("2026-06-01T09:55:00+09:00"))
+            .modelAsof("2026-06-01T09:54:00+09:00")
+            .build();
+    RecommendationItem underfilledItem =
+        RecommendationItem.newBuilder()
+            .setRecommendationId("MODEL-UNDERFILLED")
+            .setStockCode("000660")
+            .setStockName("SK하이닉스")
+            .setRanking(1)
+            .setScore(0.95)
+            .setReason("MODEL_RANKING_SIGNAL")
+            .setRiskLevel("low")
+            .build();
+    GetRecommendationsResponse underfilledResponse =
+        GetRecommendationsResponse.newBuilder()
+            .setStatus("PASS")
+            .setReason("recommendations_ready")
+            .setGeneratedAt("2026-06-01T10:01:00+09:00")
+            .setBundleId("BUNDLE-UNDERFILLED")
+            .setModelVersion("v3")
+            .setAsof("2026-06-01T10:00:00+09:00")
+            .setMode("active")
+            .addRecommendations(underfilledItem)
+            .build();
+    when(recommendationRepository.findByModelGeneratedAtIsNotNull()).thenReturn(List.of(stale));
+    when(recommendationRepository.findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            generatedAt("2026-06-01T09:55:00+09:00"), "BUNDLE-TEST"))
+        .thenReturn(List.of(stale));
+    when(aiServerClient.getRecommendations("BUNDLE-TEST", 10, false))
+        .thenReturn(underfilledResponse);
+
+    RecommendationResDTO.RecommendationListDTO result = service.findRecommendationList();
+
+    assertThat(result.getModelReason()).isEqualTo("stale_cache_fallback_ai_refresh_failed");
+    assertThat(result.getMode()).isEqualTo("cached");
+    assertThat(result.getStaleReason()).isEqualTo("ai_refresh_failed_displayable_stale_cache");
+    assertThat(result.getRecommendations())
+        .extracting(RecommendationResDTO.RecommendationInfoDTO::getStockCode)
+        .containsExactly("005930");
+    verify(aiServerClient).getRecommendations("BUNDLE-TEST", 10, false);
+    verify(recommendationRepository, never()).saveAll(org.mockito.ArgumentMatchers.anyList());
+    verify(recommendationRepository, never()).findByTickerCodeIgnoreCase("000660");
+  }
+
+  @Test
+  void returnsDisplayableStaleCacheWithoutCallingAiWhenRefreshBeforeReturnDisabled() {
+    ReflectionTestUtils.setField(service, "cacheReadEnabled", true);
+    ReflectionTestUtils.setField(service, "refreshStaleBeforeReturn", false);
     Recommendation stale =
         Recommendation.builder()
             .id(1L)
@@ -308,18 +469,130 @@ class RecommendationQueryServiceImplTest {
     assertThat(result.getMode()).isEqualTo("cached");
     assertThat(result.getStale()).isTrue();
     assertThat(result.getStaleReason()).isEqualTo("cache_stale");
-    assertThat(result.getSafeToEnableOrderActions()).isFalse();
-    assertThat(result.getLiveTradingAllowed()).isFalse();
-    verify(recommendationRepository)
-        .findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
-            generatedAt("2026-06-01T09:55:00+09:00"), "BUNDLE-TEST");
     verifyNoInteractions(aiServerClient);
   }
 
   @Test
-  void rejectsCachedRecommendationsBeyondDisplayWindow() {
+  void skipsLatestCachedBatchBelowMinimumCacheBatchSize() {
     ReflectionTestUtils.setField(service, "cacheReadEnabled", true);
-    ReflectionTestUtils.setField(service, "cacheDisplayMaxAgeSeconds", 120L);
+    ReflectionTestUtils.setField(service, "refreshStaleBeforeReturn", false);
+    ReflectionTestUtils.setField(service, "minimumCacheBatchSize", 2);
+    Recommendation latestSingle =
+        Recommendation.builder()
+            .id(1L)
+            .tickerCode("005930")
+            .companyName("삼성전자")
+            .ranking(1)
+            .modelBundleId("BUNDLE-SINGLE")
+            .modelGeneratedAt(generatedAt("2026-06-01T10:00:30+09:00"))
+            .modelAsof("2026-06-01T10:00:00+09:00")
+            .build();
+    Recommendation olderFirst =
+        Recommendation.builder()
+            .id(2L)
+            .tickerCode("000660")
+            .companyName("SK하이닉스")
+            .ranking(1)
+            .modelBundleId("BUNDLE-FULLER")
+            .modelGeneratedAt(generatedAt("2026-06-01T10:00:00+09:00"))
+            .modelAsof("2026-06-01T09:59:00+09:00")
+            .build();
+    Recommendation olderSecond =
+        Recommendation.builder()
+            .id(3L)
+            .tickerCode("042700")
+            .companyName("한미반도체")
+            .ranking(2)
+            .modelBundleId("BUNDLE-FULLER")
+            .modelGeneratedAt(generatedAt("2026-06-01T10:00:00+09:00"))
+            .modelAsof("2026-06-01T09:59:00+09:00")
+            .build();
+    when(recommendationRepository.findByModelGeneratedAtIsNotNull())
+        .thenReturn(List.of(latestSingle, olderFirst, olderSecond));
+    when(recommendationRepository.findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            generatedAt("2026-06-01T10:00:00+09:00"), "BUNDLE-FULLER"))
+        .thenReturn(List.of(olderFirst, olderSecond));
+
+    RecommendationResDTO.RecommendationListDTO result = service.findRecommendationList();
+
+    assertThat(result.getBundleId()).isEqualTo("BUNDLE-FULLER");
+    assertThat(result.getRecommendations())
+        .extracting(RecommendationResDTO.RecommendationInfoDTO::getStockCode)
+        .containsExactly("000660", "042700");
+    verify(recommendationRepository, never())
+        .findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            generatedAt("2026-06-01T10:00:30+09:00"), "BUNDLE-SINGLE");
+    verifyNoInteractions(aiServerClient);
+  }
+
+  @Test
+  void refreshesFromAiWhenCachedRecommendationsExceedDisplayWindow() {
+    ReflectionTestUtils.setField(service, "cacheReadEnabled", true);
+    ReflectionTestUtils.setField(service, "displayMaxAgeSec", 120L);
+    Recommendation stale =
+        Recommendation.builder()
+            .id(1L)
+            .tickerCode("005930")
+            .companyName("삼성전자")
+            .ranking(1)
+            .modelBundleId("BUNDLE-TEST")
+            .modelGeneratedAt(generatedAt("2026-06-01T09:55:00+09:00"))
+            .modelAsof("2026-06-01T09:54:00+09:00")
+            .build();
+    Recommendation refreshed =
+        Recommendation.builder().id(2L).tickerCode("000660").companyName("SK하이닉스").build();
+    RecommendationItem refreshedItem =
+        RecommendationItem.newBuilder()
+            .setRecommendationId("MODEL-REFRESHED")
+            .setStockCode("000660")
+            .setStockName("SK하이닉스")
+            .setRanking(1)
+            .setScore(0.95)
+            .setReason("REFRESHED_MODEL_SIGNAL")
+            .setRiskLevel("low")
+            .build();
+    GetRecommendationsResponse response =
+        GetRecommendationsResponse.newBuilder()
+            .setStatus("PASS")
+            .setReason("recommendations_ready")
+            .setGeneratedAt("2026-06-01T10:01:00+09:00")
+            .setBundleId("BUNDLE-REFRESHED")
+            .setModelVersion("v3")
+            .setAsof("2026-06-01T10:00:00+09:00")
+            .setMode("active")
+            .addRecommendations(refreshedItem)
+            .build();
+    when(recommendationRepository.findByModelGeneratedAtIsNotNull()).thenReturn(List.of(stale));
+    when(recommendationRepository.findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            generatedAt("2026-06-01T09:55:00+09:00"), "BUNDLE-TEST"))
+        .thenReturn(List.of(stale));
+    when(aiServerClient.getRecommendations("BUNDLE-TEST", 10, false)).thenReturn(response);
+    when(recommendationRepository.findByTickerCodeIgnoreCase("000660"))
+        .thenReturn(Optional.of(refreshed));
+    when(recommendationRepository.saveAll(org.mockito.ArgumentMatchers.anyList()))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    RecommendationResDTO.RecommendationListDTO result = service.findRecommendationList();
+
+    assertThat(result.getModelReason()).isEqualTo("recommendations_ready");
+    assertThat(result.getBundleId()).isEqualTo("BUNDLE-REFRESHED");
+    assertThat(result.getGeneratedAt()).isEqualTo("2026-06-01T10:01:00+09:00");
+    assertThat(result.getRecommendations())
+        .extracting(RecommendationResDTO.RecommendationInfoDTO::getStockCode)
+        .containsExactly("000660");
+    assertThat(refreshed.getModelGeneratedAt()).isEqualTo(generatedAt("2026-06-01T10:01:00+09:00"));
+    verify(recommendationRepository)
+        .findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            generatedAt("2026-06-01T09:55:00+09:00"), "BUNDLE-TEST");
+    verify(aiServerClient).getRecommendations("BUNDLE-TEST", 10, false);
+    verify(recommendationRepository).saveAll(org.mockito.ArgumentMatchers.anyList());
+  }
+
+  @Test
+  void returnsStaleCacheWhenAiRefreshFailsAndStaleFallbackIsAllowed() {
+    ReflectionTestUtils.setField(service, "cacheReadEnabled", true);
+    ReflectionTestUtils.setField(service, "displayMaxAgeSec", 120L);
+    ReflectionTestUtils.setField(service, "allowStaleFallback", true);
     Recommendation stale =
         Recommendation.builder()
             .id(1L)
@@ -331,16 +604,63 @@ class RecommendationQueryServiceImplTest {
             .modelAsof("2026-06-01T09:54:00+09:00")
             .build();
     when(recommendationRepository.findByModelGeneratedAtIsNotNull()).thenReturn(List.of(stale));
+    when(recommendationRepository.findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            generatedAt("2026-06-01T09:55:00+09:00"), "BUNDLE-TEST"))
+        .thenReturn(List.of(stale));
+    when(aiServerClient.getRecommendations("BUNDLE-TEST", 10, false))
+        .thenReturn(
+            GetRecommendationsResponse.newBuilder()
+                .setStatus("BLOCKED")
+                .setReason("quant_agent_unavailable")
+                .build());
+
+    RecommendationResDTO.RecommendationListDTO result = service.findRecommendationList();
+
+    assertThat(result.getModelReason()).isEqualTo("stale_cache_fallback_ai_refresh_failed");
+    assertThat(result.getMode()).isEqualTo("cached");
+    assertThat(result.getStale()).isTrue();
+    assertThat(result.getStaleReason()).isEqualTo("ai_refresh_failed_stale_fallback");
+    assertThat(result.getCacheAgeSec()).isEqualTo(360L);
+    assertThat(result.getRecommendations())
+        .extracting(RecommendationResDTO.RecommendationInfoDTO::getStockCode)
+        .containsExactly("005930");
+    verify(aiServerClient).getRecommendations("BUNDLE-TEST", 10, false);
+    verify(recommendationRepository, never()).saveAll(org.mockito.ArgumentMatchers.anyList());
+  }
+
+  @Test
+  void rejectsStaleCacheWhenAiRefreshFailsAndStaleFallbackIsDisabled() {
+    ReflectionTestUtils.setField(service, "cacheReadEnabled", true);
+    ReflectionTestUtils.setField(service, "displayMaxAgeSec", 120L);
+    ReflectionTestUtils.setField(service, "allowStaleFallback", false);
+    Recommendation stale =
+        Recommendation.builder()
+            .id(1L)
+            .tickerCode("005930")
+            .companyName("삼성전자")
+            .ranking(1)
+            .modelBundleId("BUNDLE-TEST")
+            .modelGeneratedAt(generatedAt("2026-06-01T09:55:00+09:00"))
+            .modelAsof("2026-06-01T09:54:00+09:00")
+            .build();
+    when(recommendationRepository.findByModelGeneratedAtIsNotNull()).thenReturn(List.of(stale));
+    when(recommendationRepository.findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            generatedAt("2026-06-01T09:55:00+09:00"), "BUNDLE-TEST"))
+        .thenReturn(List.of(stale));
+    when(aiServerClient.getRecommendations("BUNDLE-TEST", 10, false))
+        .thenReturn(
+            GetRecommendationsResponse.newBuilder()
+                .setStatus("BLOCKED")
+                .setReason("quant_agent_unavailable")
+                .build());
 
     assertThatThrownBy(service::findRecommendationList)
         .isInstanceOf(GeneralException.class)
         .extracting("code")
         .isEqualTo(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
 
-    verify(recommendationRepository, never())
-        .findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
-            generatedAt("2026-06-01T09:55:00+09:00"), "BUNDLE-TEST");
-    verifyNoInteractions(aiServerClient);
+    verify(aiServerClient).getRecommendations("BUNDLE-TEST", 10, false);
+    verify(recommendationRepository, never()).saveAll(org.mockito.ArgumentMatchers.anyList());
   }
 
   @Test
@@ -584,7 +904,7 @@ class RecommendationQueryServiceImplTest {
 
   @Test
   void rejectsRecommendationDetailBeyondDisplayWindow() {
-    ReflectionTestUtils.setField(service, "cacheDisplayMaxAgeSeconds", 120L);
+    ReflectionTestUtils.setField(service, "displayMaxAgeSec", 120L);
     Recommendation recommendation =
         Recommendation.builder()
             .id(1L)

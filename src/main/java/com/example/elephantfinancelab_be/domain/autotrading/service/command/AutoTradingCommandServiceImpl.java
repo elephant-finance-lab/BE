@@ -51,7 +51,7 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
   @Value("${ai.paper-auto.confirm-phrase:PAPER_AUTO_OK}")
   private String confirmPhrase;
 
-  @Value("${ai.recommendations.cache.max-age-seconds:180}")
+  @Value("${recommendation.fresh-max-age-sec:${ai.recommendations.cache.max-age-seconds:180}}")
   private long recommendationStartMaxAgeSeconds;
 
   @Value("${ai.recommendations.cache.max-future-skew-seconds:5}")

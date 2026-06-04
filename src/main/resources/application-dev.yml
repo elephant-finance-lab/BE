@@ -70,6 +70,15 @@ kis:
   cano: ${KIS_CANO:}
   acnt-prdt-cd: ${KIS_ACNT_PRDT_CD:}
 
+recommendation:
+  fresh-max-age-sec: ${RECOMMENDATION_FRESH_MAX_AGE_SEC:${AI_RECOMMENDATION_CACHE_MAX_AGE_SECONDS:180}}
+  display-max-age-sec: ${RECOMMENDATION_DISPLAY_MAX_AGE_SEC:${AI_RECOMMENDATION_CACHE_DISPLAY_MAX_AGE_SECONDS:${AI_RECOMMENDATION_CACHE_MAX_STALE_AGE_SECONDS:86400}}}
+  allow-stale-fallback: ${RECOMMENDATION_ALLOW_STALE_FALLBACK:false}
+  stale-fallback-max-age-sec: ${RECOMMENDATION_STALE_FALLBACK_MAX_AGE_SEC:86400}
+  refresh-stale-before-return: ${RECOMMENDATION_REFRESH_STALE_BEFORE_RETURN:true}
+  minimum-ai-response-count: ${RECOMMENDATION_MINIMUM_AI_RESPONSE_COUNT:${AI_RECOMMENDATION_TOP_K:10}}
+  minimum-cache-batch-size: ${RECOMMENDATION_MINIMUM_CACHE_BATCH_SIZE:2}
+
 logging:
   level:
     org.springframework.security: DEBUG
@@ -92,15 +101,15 @@ ai:
   recommendations:
     bundle-id: ${AI_RECOMMENDATION_BUNDLE_ID:}
     top-k: ${AI_RECOMMENDATION_TOP_K:10}
-    include-diagnostics: ${AI_RECOMMENDATION_INCLUDE_DIAGNOSTICS:false}
+    include-diagnostics: ${AI_RECOMMENDATION_INCLUDE_DIAGNOSTICS:true}
     cache-read-enabled: ${AI_RECOMMENDATION_CACHE_READ_ENABLED:true}
     cache:
-      max-age-seconds: ${AI_RECOMMENDATION_CACHE_MAX_AGE_SECONDS:180}
-      display-max-age-seconds: ${AI_RECOMMENDATION_CACHE_DISPLAY_MAX_AGE_SECONDS:${AI_RECOMMENDATION_CACHE_MAX_STALE_AGE_SECONDS:86400}}
+      max-age-seconds: ${recommendation.fresh-max-age-sec}
+      display-max-age-seconds: ${recommendation.display-max-age-sec}
       allow-stale-display: ${AI_RECOMMENDATION_CACHE_ALLOW_STALE_DISPLAY:${AI_RECOMMENDATION_CACHE_SERVE_STALE:true}}
       max-future-skew-seconds: ${AI_RECOMMENDATION_CACHE_MAX_FUTURE_SKEW_SECONDS:5}
     refresh:
-      enabled: ${AI_RECOMMENDATION_REFRESH_ENABLED:true}
+      enabled: ${AI_RECOMMENDATION_REFRESH_ENABLED:false}
       fixed-delay-ms: ${AI_RECOMMENDATION_REFRESH_FIXED_DELAY_MS:60000}
       initial-delay-ms: ${AI_RECOMMENDATION_REFRESH_INITIAL_DELAY_MS:1000}
       market-hours-only: ${AI_RECOMMENDATION_REFRESH_MARKET_HOURS_ONLY:true}

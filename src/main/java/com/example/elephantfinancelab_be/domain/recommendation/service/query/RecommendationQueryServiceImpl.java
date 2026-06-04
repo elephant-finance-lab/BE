@@ -13,6 +13,7 @@ import com.example.elephantfinancelab_be.domain.user.exception.UserException;
 import com.example.elephantfinancelab_be.domain.user.exception.code.UserErrorCode;
 import com.example.elephantfinancelab_be.domain.user.repository.UserRepository;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.GeneralException;
+import com.example.elephantfinancelab_be.global.apiPayload.util.AiDetailSanitizer;
 import com.example.elephantfinancelab_be.global.config.AiServerClient;
 import java.time.Clock;
 import java.time.Duration;
@@ -66,16 +67,31 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
   @Value("${ai.recommendations.cache-read-enabled:false}")
   private boolean cacheReadEnabled;
 
-  @Value("${ai.recommendations.cache.max-age-seconds:180}")
-  private long cacheMaxAgeSeconds;
+  @Value("${recommendation.fresh-max-age-sec:${ai.recommendations.cache.max-age-seconds:180}}")
+  private long freshMaxAgeSec;
 
   @Value(
-      "${ai.recommendations.cache.display-max-age-seconds:${ai.recommendations.cache.max-stale-age-seconds:86400}}")
-  private long cacheDisplayMaxAgeSeconds;
+      "${recommendation.display-max-age-sec:${ai.recommendations.cache.display-max-age-seconds:${ai.recommendations.cache.max-stale-age-seconds:86400}}}")
+  private long displayMaxAgeSec;
 
   @Value(
       "${ai.recommendations.cache.allow-stale-display:${ai.recommendations.cache.serve-stale:true}}")
   private boolean allowStaleDisplay;
+
+  @Value("${recommendation.allow-stale-fallback:false}")
+  private boolean allowStaleFallback;
+
+  @Value("${recommendation.stale-fallback-max-age-sec:604800}")
+  private long staleFallbackMaxAgeSec;
+
+  @Value("${recommendation.refresh-stale-before-return:true}")
+  private boolean refreshStaleBeforeReturn;
+
+  @Value("${recommendation.minimum-ai-response-count:${ai.recommendations.top-k:10}}")
+  private int minimumAiResponseCount;
+
+  @Value("${recommendation.minimum-cache-batch-size:1}")
+  private int minimumCacheBatchSize;
 
   @Value("${ai.recommendations.cache.max-future-skew-seconds:5}")
   private long cacheMaxFutureSkewSeconds;
@@ -86,15 +102,25 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
   @Transactional
   public RecommendationResDTO.RecommendationListDTO findRecommendationList(String email) {
     if (cacheReadEnabled) {
+      CachedRecommendations cachedRecommendations;
       try {
-        return findCachedRecommendationList(email);
-      } catch (TooStaleForDisplayException e) {
-        throw e;
+        cachedRecommendations = findCachedRecommendations(email);
       } catch (GeneralException e) {
         log.info(
             "[Recommendation] cached recommendations unavailable. refreshing from AI. code={}",
             e.getCode().getCode());
+        return refreshModelRecommendations(email);
       }
+      if (cachedRecommendations.tooStaleForDisplay()) {
+        return refreshTooStaleCachedRecommendations(email, cachedRecommendations);
+      }
+      if (cachedRecommendations.stale() && refreshStaleBeforeReturn) {
+        return refreshDisplayableStaleCachedRecommendations(email, cachedRecommendations);
+      }
+      return toCachedRecommendationListDTO(
+          cachedRecommendations,
+          "cached_recommendations",
+          cachedStaleReason(cachedRecommendations));
     }
     return refreshModelRecommendations(email);
   }
@@ -111,15 +137,18 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
             recommendationBundleId, recommendationTopK, includeRecommendationDiagnostics);
     if (!"PASS".equalsIgnoreCase(response.getStatus())) {
       log.warn(
-          "[Recommendation] AI model response unavailable: status={}, reason={}",
+          "[Recommendation] AI model response unavailable: status={}, reason={}, diagnostics={}",
           response.getStatus(),
-          response.getReason());
+          response.getReason(),
+          AiDetailSanitizer.sanitize(response.getDiagnosticsJson()));
       throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
     }
 
     OffsetDateTime modelGeneratedAt = parseGeneratedAt(response.getGeneratedAt());
+    Map<String, RecommendationItem> deduplicatedRecommendations = deduplicateByStockCode(response);
+    rejectUnderfilledAiResponse(response, deduplicatedRecommendations.size());
     List<Recommendation> recommendations =
-        deduplicateByStockCode(response).values().stream()
+        deduplicatedRecommendations.values().stream()
             .map(item -> upsertModelRecommendation(item, response, modelGeneratedAt))
             .toList();
     List<Recommendation> savedRecommendations = recommendationRepository.saveAll(recommendations);
@@ -146,12 +175,103 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
         infoList);
   }
 
-  private RecommendationResDTO.RecommendationListDTO findCachedRecommendationList(String email) {
+  private RecommendationResDTO.RecommendationListDTO refreshTooStaleCachedRecommendations(
+      String email, CachedRecommendations cachedRecommendations) {
+    log.warn(
+        "[Recommendation] cached model recommendations too stale for display. refreshing from AI before failing: generatedAt={}, ageSec={}, freshMaxAgeSec={}, displayMaxAgeSec={}",
+        formatGeneratedAt(cachedRecommendations.generatedAt()),
+        cachedRecommendations.cacheAgeSec(),
+        freshMaxAgeSec,
+        displayMaxAgeSec);
+    try {
+      return refreshModelRecommendations(email);
+    } catch (RuntimeException e) {
+      if (canReturnStaleFallback(cachedRecommendations)) {
+        log.warn(
+            "[Recommendation] AI refresh failed; returning stale cached recommendations by fallback policy: generatedAt={}, ageSec={}, staleFallbackMaxAgeSec={}, failure={}",
+            formatGeneratedAt(cachedRecommendations.generatedAt()),
+            cachedRecommendations.cacheAgeSec(),
+            staleFallbackMaxAgeSec,
+            e.toString());
+        return toCachedRecommendationListDTO(
+            cachedRecommendations,
+            "stale_cache_fallback_ai_refresh_failed",
+            "ai_refresh_failed_stale_fallback");
+      }
+      log.warn(
+          "[Recommendation] AI refresh failed and stale fallback is disabled or expired: generatedAt={}, ageSec={}, allowStaleFallback={}, staleFallbackMaxAgeSec={}, failure={}",
+          formatGeneratedAt(cachedRecommendations.generatedAt()),
+          cachedRecommendations.cacheAgeSec(),
+          allowStaleFallback,
+          staleFallbackMaxAgeSec,
+          e.toString());
+      throw modelRecommendationUnavailable(e);
+    }
+  }
+
+  private void rejectUnderfilledAiResponse(
+      GetRecommendationsResponse response, int recommendationCount) {
+    int requiredCount = requiredAiRecommendationCount();
+    if (recommendationCount >= requiredCount) {
+      return;
+    }
+    log.warn(
+        "[Recommendation] AI model response underfilled: status={}, reason={}, count={}, requiredCount={}, topK={}, diagnostics={}",
+        response.getStatus(),
+        response.getReason(),
+        recommendationCount,
+        requiredCount,
+        recommendationTopK,
+        AiDetailSanitizer.sanitize(response.getDiagnosticsJson()));
+    throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+  }
+
+  private int requiredAiRecommendationCount() {
+    int configuredMinimum = Math.max(1, minimumAiResponseCount);
+    int requestedTopK = Math.max(1, recommendationTopK);
+    return Math.min(configuredMinimum, requestedTopK);
+  }
+
+  private RecommendationResDTO.RecommendationListDTO refreshDisplayableStaleCachedRecommendations(
+      String email, CachedRecommendations cachedRecommendations) {
+    log.warn(
+        "[Recommendation] cached model recommendations stale but displayable. refreshing from AI before returning cache: generatedAt={}, ageSec={}, freshMaxAgeSec={}, displayMaxAgeSec={}",
+        formatGeneratedAt(cachedRecommendations.generatedAt()),
+        cachedRecommendations.cacheAgeSec(),
+        freshMaxAgeSec,
+        displayMaxAgeSec);
+    try {
+      return refreshModelRecommendations(email);
+    } catch (RuntimeException e) {
+      log.warn(
+          "[Recommendation] AI refresh failed; returning displayable stale cached recommendations: generatedAt={}, ageSec={}, failure={}",
+          formatGeneratedAt(cachedRecommendations.generatedAt()),
+          cachedRecommendations.cacheAgeSec(),
+          e.toString());
+      return toCachedRecommendationListDTO(
+          cachedRecommendations,
+          "stale_cache_fallback_ai_refresh_failed",
+          "ai_refresh_failed_displayable_stale_cache");
+    }
+  }
+
+  private boolean canReturnStaleFallback(CachedRecommendations cachedRecommendations) {
+    return allowStaleFallback && cachedRecommendations.cacheAgeSec() <= staleFallbackMaxAgeSec;
+  }
+
+  private GeneralException modelRecommendationUnavailable(RuntimeException e) {
+    if (e instanceof GeneralException generalException) {
+      return generalException;
+    }
+    return new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+  }
+
+  private CachedRecommendations findCachedRecommendations(String email) {
     Recommendation latest = findLatestCachedRecommendation();
     OffsetDateTime latestGeneratedAt = latest.getModelGeneratedAt();
     long cacheAgeSec = cacheAgeSec(latestGeneratedAt);
-    boolean stale = cacheAgeSec > cacheMaxAgeSeconds;
-    rejectIfTooStaleForDisplay(latestGeneratedAt, cacheAgeSec, stale);
+    boolean stale = cacheAgeSec > freshMaxAgeSec;
+    boolean tooStaleForDisplay = cacheAgeSec > displayMaxAgeSec;
     List<Recommendation> savedRecommendations =
         recommendationRepository.findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
             latestGeneratedAt, latest.getModelBundleId());
@@ -159,29 +279,39 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
       log.warn("[Recommendation] cached model recommendations unavailable");
       throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
     }
-    if (stale) {
+    if (stale && !tooStaleForDisplay) {
       log.warn(
           "[Recommendation] returning stale cached model recommendations: generatedAt={}, ageSec={}, freshMaxAgeSec={}, displayMaxAgeSec={}",
           formatGeneratedAt(latestGeneratedAt),
           cacheAgeSec,
-          cacheMaxAgeSeconds,
-          cacheDisplayMaxAgeSeconds);
+          freshMaxAgeSec,
+          displayMaxAgeSec);
     }
     List<RecommendationResDTO.RecommendationInfoDTO> infoList =
         toRecommendationInfoDTOs(email, savedRecommendations);
+    return new CachedRecommendations(
+        latest, latestGeneratedAt, cacheAgeSec, stale, tooStaleForDisplay, infoList);
+  }
+
+  private RecommendationResDTO.RecommendationListDTO toCachedRecommendationListDTO(
+      CachedRecommendations cachedRecommendations, String modelReason, String staleReason) {
     return RecommendationConverter.toRecommendationListDTO(
         "사용자 맞춤 투자 추천 리스트",
         "PASS",
-        "cached_recommendations",
-        formatGeneratedAt(latestGeneratedAt),
-        latest.getModelBundleId(),
-        latest.getModelVersion(),
-        latest.getModelAsof(),
+        modelReason,
+        formatGeneratedAt(cachedRecommendations.generatedAt()),
+        cachedRecommendations.latest().getModelBundleId(),
+        cachedRecommendations.latest().getModelVersion(),
+        cachedRecommendations.latest().getModelAsof(),
         "cached",
-        cacheAgeSec,
-        stale,
-        stale ? "cache_stale" : null,
-        infoList);
+        cachedRecommendations.cacheAgeSec(),
+        cachedRecommendations.stale(),
+        staleReason,
+        cachedRecommendations.infoList());
+  }
+
+  private String cachedStaleReason(CachedRecommendations cachedRecommendations) {
+    return cachedRecommendations.stale() ? "cache_stale" : null;
   }
 
   @Override
@@ -333,27 +463,36 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
       return new DetailCacheState(null, true, "recommendation_generated_at_invalid");
     }
     long cacheAgeSec = Math.max(0L, Duration.between(generated, now).getSeconds());
-    boolean stale = cacheAgeSec > cacheMaxAgeSeconds;
+    boolean stale = cacheAgeSec > freshMaxAgeSec;
     rejectIfTooStaleForDisplay(generated, cacheAgeSec, stale);
     return new DetailCacheState(cacheAgeSec, stale, stale ? "cache_stale" : null);
   }
 
   private void rejectIfTooStaleForDisplay(
       OffsetDateTime generatedAt, long cacheAgeSec, boolean stale) {
-    if (!stale || (allowStaleDisplay && cacheAgeSec <= cacheDisplayMaxAgeSeconds)) {
+    if (!stale || (allowStaleDisplay && cacheAgeSec <= displayMaxAgeSec)) {
       return;
     }
     log.warn(
         "[Recommendation] cached model recommendations too stale for display: generatedAt={}, ageSec={}, freshMaxAgeSec={}, displayMaxAgeSec={}",
         formatGeneratedAt(generatedAt),
         cacheAgeSec,
-        cacheMaxAgeSeconds,
-        cacheDisplayMaxAgeSeconds);
+        freshMaxAgeSec,
+        displayMaxAgeSec);
     throw new TooStaleForDisplayException();
   }
 
   private Recommendation findLatestCachedRecommendation() {
-    return recommendationRepository.findByModelGeneratedAtIsNotNull().stream()
+    List<Recommendation> cachedRecommendations =
+        recommendationRepository.findByModelGeneratedAtIsNotNull();
+    Map<CachedBatchKey, Long> batchSizes =
+        cachedRecommendations.stream()
+            .collect(Collectors.groupingBy(this::cachedBatchKey, Collectors.counting()));
+    int requiredBatchSize = Math.max(1, minimumCacheBatchSize);
+    return cachedRecommendations.stream()
+        .filter(
+            recommendation ->
+                batchSizes.getOrDefault(cachedBatchKey(recommendation), 0L) >= requiredBatchSize)
         .sorted(
             Comparator.comparing(
                     (Recommendation recommendation) ->
@@ -363,7 +502,18 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
                     Recommendation::getRanking, Comparator.nullsLast(Comparator.naturalOrder())))
         .findFirst()
         .orElseThrow(
-            () -> new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE));
+            () -> {
+              log.warn(
+                  "[Recommendation] no cached model recommendation batch meets minimum size. minimumCacheBatchSize={}, batchSizes={}",
+                  requiredBatchSize,
+                  batchSizes);
+              return new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+            });
+  }
+
+  private CachedBatchKey cachedBatchKey(Recommendation recommendation) {
+    return new CachedBatchKey(
+        recommendation.getModelGeneratedAt(), recommendation.getModelBundleId());
   }
 
   private OffsetDateTime parseGeneratedAt(String generatedAt) {
@@ -380,6 +530,16 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
   }
 
   private record DetailCacheState(Long cacheAgeSec, boolean stale, String staleReason) {}
+
+  private record CachedBatchKey(OffsetDateTime generatedAt, String bundleId) {}
+
+  private record CachedRecommendations(
+      Recommendation latest,
+      OffsetDateTime generatedAt,
+      long cacheAgeSec,
+      boolean stale,
+      boolean tooStaleForDisplay,
+      List<RecommendationResDTO.RecommendationInfoDTO> infoList) {}
 
   private static final class TooStaleForDisplayException extends GeneralException {
     private TooStaleForDisplayException() {
