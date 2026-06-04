@@ -45,8 +45,9 @@ public class SecurityConfig {
   private final CustomLogoutSuccessHandler customLogoutSuccessHandler;
   private final OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
   private final JwtFilter jwtFilter;
+  private final RefreshTokenOriginFilter refreshTokenOriginFilter;
 
-  @Value("${app.cors.allowed-origins:http://localhost:5173}")
+  @Value("${app.cors.allowed-origins:https://elephantfinancelab.site,https://www.elephantfinancelab.site}")
   private String corsAllowedOrigins;
 
   private static final String[] PUBLIC_URLS = {
@@ -164,6 +165,7 @@ public class SecurityConfig {
       http.httpBasic(Customizer.withDefaults());
     }
 
+    http.addFilterBefore(refreshTokenOriginFilter, UsernamePasswordAuthenticationFilter.class);
     http.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
     http.logout(

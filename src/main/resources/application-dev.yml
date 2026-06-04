@@ -20,7 +20,7 @@ spring:
   jpa:
     show-sql: false
     hibernate:
-      ddl-auto: update
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:validate}
     properties:
       hibernate:
         format_sql: true
@@ -84,8 +84,14 @@ recommendation:
 
 logging:
   level:
-    org.springframework.security: DEBUG
-    com.example: DEBUG
+    org.springframework.security: WARN
+    com.example: INFO
+
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_API_DOCS_ENABLED:false}
+  swagger-ui:
+    enabled: ${SPRINGDOC_SWAGGER_UI_ENABLED:false}
 
 ai:
   server:
