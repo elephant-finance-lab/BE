@@ -425,6 +425,45 @@ class RecommendationQueryServiceImplTest {
   }
 
   @Test
+  void rejectsRecommendationDetailBeyondDisplayWindow() {
+    ReflectionTestUtils.setField(service, "cacheDisplayMaxAgeSeconds", 120L);
+    Recommendation recommendation =
+        Recommendation.builder()
+            .id(1L)
+            .ranking(1)
+            .tickerCode("005930")
+            .companyName("삼성전자")
+            .modelGeneratedAt(generatedAt("2026-06-01T09:55:00+09:00"))
+            .build();
+    when(recommendationRepository.findById(1L)).thenReturn(Optional.of(recommendation));
+
+    assertThatThrownBy(() -> service.findRecommendationDetail(1L))
+        .isInstanceOf(GeneralException.class)
+        .extracting("code")
+        .isEqualTo(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+  }
+
+  @Test
+  void rejectsRecommendationDetailByStockCodeWhenStaleDisplayIsDisabled() {
+    ReflectionTestUtils.setField(service, "allowStaleDisplay", false);
+    Recommendation recommendation =
+        Recommendation.builder()
+            .id(1L)
+            .ranking(1)
+            .tickerCode("005930")
+            .companyName("삼성전자")
+            .modelGeneratedAt(generatedAt("2026-06-01T09:55:00+09:00"))
+            .build();
+    when(recommendationRepository.findByTickerCodeIgnoreCase("005930"))
+        .thenReturn(Optional.of(recommendation));
+
+    assertThatThrownBy(() -> service.findRecommendationDetail("005930"))
+        .isInstanceOf(GeneralException.class)
+        .extracting("code")
+        .isEqualTo(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+  }
+
+  @Test
   void marksRecommendationDetailAsStaleWhenGeneratedAtIsMissing() {
     Recommendation recommendation =
         Recommendation.builder().id(1L).ranking(1).tickerCode("005930").companyName("삼성전자").build();

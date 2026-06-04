@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -98,6 +100,63 @@ class AutoTradingCommandServiceImplTest {
         .hasMessageContaining("intervalSec must be at least 60");
 
     verifyNoInteractions(selectedRepository, aiServerClient);
+  }
+
+  @Test
+  void startsPaperAutoSessionWithNullCyclesAndIntervalForAiDefaults() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-ai-default-null"))
+        .thenReturn(Optional.empty());
+    when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+        .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
+    when(aiServerClient.startPaperAutoTrading(
+            anyString(), anyString(), any(), any(), any(), anyString()))
+        .thenReturn(
+            StartPaperAutoTradingResponse.newBuilder()
+                .setAccepted(true)
+                .setStatus("STARTED")
+                .setSessionId("ai-session-default-null")
+                .build());
+    AutoTradingReqDTO.StartSession request = request();
+    ReflectionTestUtils.setField(request, "cycles", null);
+    ReflectionTestUtils.setField(request, "intervalSec", null);
+
+    AutoTradingResDTO.Session result =
+        service.startSession(1L, "idempotency-ai-default-null", request);
+
+    assertThat(result.getStatus()).isEqualTo(AutoTradingSessionStatus.RUNNING);
+    verify(aiServerClient)
+        .startPaperAutoTrading(
+            anyString(), anyString(), isNull(), isNull(), any(), eq("PAPER_AUTO_OK"));
+  }
+
+  @Test
+  void startsPaperAutoSessionWithZeroCyclesAndIntervalForAiDefaults() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-ai-default-zero"))
+        .thenReturn(Optional.empty());
+    when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+        .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
+    when(aiServerClient.startPaperAutoTrading(
+            anyString(), anyString(), any(), any(), any(), anyString()))
+        .thenReturn(
+            StartPaperAutoTradingResponse.newBuilder()
+                .setAccepted(true)
+                .setStatus("STARTED")
+                .setSessionId("ai-session-default-zero")
+                .build());
+    AutoTradingReqDTO.StartSession request = request();
+    ReflectionTestUtils.setField(request, "cycles", 0);
+    ReflectionTestUtils.setField(request, "intervalSec", 0);
+
+    AutoTradingResDTO.Session result =
+        service.startSession(1L, "idempotency-ai-default-zero", request);
+
+    assertThat(result.getStatus()).isEqualTo(AutoTradingSessionStatus.RUNNING);
+    verify(aiServerClient)
+        .startPaperAutoTrading(anyString(), anyString(), eq(0), eq(0), any(), eq("PAPER_AUTO_OK"));
   }
 
   @Test

@@ -124,15 +124,7 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
     OffsetDateTime latestGeneratedAt = latest.getModelGeneratedAt();
     long cacheAgeSec = cacheAgeSec(latestGeneratedAt);
     boolean stale = cacheAgeSec > cacheMaxAgeSeconds;
-    if (stale && (!allowStaleDisplay || cacheAgeSec > cacheDisplayMaxAgeSeconds)) {
-      log.warn(
-          "[Recommendation] cached model recommendations too stale for display: generatedAt={}, ageSec={}, freshMaxAgeSec={}, displayMaxAgeSec={}",
-          formatGeneratedAt(latestGeneratedAt),
-          cacheAgeSec,
-          cacheMaxAgeSeconds,
-          cacheDisplayMaxAgeSeconds);
-      throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
-    }
+    rejectIfTooStaleForDisplay(latestGeneratedAt, cacheAgeSec, stale);
     List<Recommendation> savedRecommendations =
         recommendationRepository.findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
             latestGeneratedAt, latest.getModelBundleId());
@@ -274,7 +266,22 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
     }
     long cacheAgeSec = Math.max(0L, Duration.between(generated, now).getSeconds());
     boolean stale = cacheAgeSec > cacheMaxAgeSeconds;
+    rejectIfTooStaleForDisplay(generated, cacheAgeSec, stale);
     return new DetailCacheState(cacheAgeSec, stale, stale ? "cache_stale" : null);
+  }
+
+  private void rejectIfTooStaleForDisplay(
+      OffsetDateTime generatedAt, long cacheAgeSec, boolean stale) {
+    if (!stale || (allowStaleDisplay && cacheAgeSec <= cacheDisplayMaxAgeSeconds)) {
+      return;
+    }
+    log.warn(
+        "[Recommendation] cached model recommendations too stale for display: generatedAt={}, ageSec={}, freshMaxAgeSec={}, displayMaxAgeSec={}",
+        formatGeneratedAt(generatedAt),
+        cacheAgeSec,
+        cacheMaxAgeSeconds,
+        cacheDisplayMaxAgeSeconds);
+    throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
   }
 
   private Recommendation findLatestCachedRecommendation() {

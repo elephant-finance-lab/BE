@@ -467,7 +467,7 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
   }
 
   private static void validateMinIntervalSec(Integer value) {
-    if (value != null && value < MIN_PAPER_INTERVAL_SEC) {
+    if (value != null && value != 0 && value < MIN_PAPER_INTERVAL_SEC) {
       throw new IllegalArgumentException(
           "intervalSec must be at least " + MIN_PAPER_INTERVAL_SEC + " seconds");
     }

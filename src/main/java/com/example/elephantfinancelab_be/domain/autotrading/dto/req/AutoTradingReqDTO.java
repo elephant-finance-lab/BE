@@ -22,12 +22,10 @@ public class AutoTradingReqDTO {
     @Max(4)
     private Integer purchaseOptionId;
 
-    @NotNull
-    @Min(1)
+    @Min(0)
     private Integer cycles;
 
-    @NotNull
-    @Min(60)
+    @Min(0)
     private Integer intervalSec;
   }
 }
