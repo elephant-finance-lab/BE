@@ -121,7 +121,7 @@ curl -X POST http://localhost:8080/api/auto-trading/sessions \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: demo-paper-auto-001" \
   -H "Content-Type: application/json" \
-  -d '{"recommendationIds":[1,2],"purchaseOptionId":2,"cycles":3,"intervalSec":10}'
+  -d '{"recommendationIds":[1,2],"purchaseOptionId":2}'
 ```
 
 Repeat the same `Idempotency-Key` to receive the stored session without

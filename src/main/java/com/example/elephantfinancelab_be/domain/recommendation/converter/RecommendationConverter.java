@@ -109,6 +109,11 @@ public final class RecommendationConverter {
 
   public static RecommendationResDTO.RecommendationDetailDTO toRecommendationDetailDTO(
       Recommendation entity, String profile) {
+    return toRecommendationDetailDTO(entity, profile, null, false, null);
+  }
+
+  public static RecommendationResDTO.RecommendationDetailDTO toRecommendationDetailDTO(
+      Recommendation entity, String profile, Long cacheAgeSec, Boolean stale, String staleReason) {
     return RecommendationResDTO.RecommendationDetailDTO.builder()
         .recommendationId(entity.getId())
         .modelRecommendationId(entity.getModelRecommendationId())
@@ -135,6 +140,12 @@ public final class RecommendationConverter {
         .bundleId(entity.getModelBundleId())
         .modelGeneratedAt(formatGeneratedAt(entity.getModelGeneratedAt()))
         .modelAsof(entity.getModelAsof())
+        .cacheAgeSec(cacheAgeSec)
+        .stale(stale)
+        .staleReason(staleReason)
+        .advisoryOnly(true)
+        .safeToEnableOrderActions(false)
+        .liveTradingAllowed(false)
         .sections(
             RecommendationResDTO.DetailSectionsDTO.builder()
                 .recommendReason(entity.getRecommendReason())

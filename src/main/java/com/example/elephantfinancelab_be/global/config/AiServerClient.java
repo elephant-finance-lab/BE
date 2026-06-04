@@ -39,28 +39,44 @@ public class AiServerClient {
 
   private final AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stub;
   private final int timeout;
+  private final int healthTimeout;
+  private final int readinessTimeout;
   private final int recommendationsTimeout;
+  private final int paperStartTimeout;
+  private final int paperStatusTimeout;
+  private final int paperStopTimeout;
 
   @Autowired
   public AiServerClient(
       AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stub,
       @Value("${ai.server.timeout}") int timeout,
-      @Value("${ai.server.recommendations-timeout:0}") int recommendationsTimeout) {
+      @Value("${ai.server.timeout-health:3}") int healthTimeout,
+      @Value("${ai.server.timeout-readiness:10}") int readinessTimeout,
+      @Value("${ai.server.timeout-recommendations:${ai.server.recommendations-timeout:90}}")
+          int recommendationsTimeout,
+      @Value("${ai.server.timeout-paper-start:30}") int paperStartTimeout,
+      @Value("${ai.server.timeout-paper-status:5}") int paperStatusTimeout,
+      @Value("${ai.server.timeout-paper-stop:10}") int paperStopTimeout) {
     this.stub = stub;
     this.timeout = timeout;
-    this.recommendationsTimeout = recommendationsTimeout > 0 ? recommendationsTimeout : timeout;
+    this.healthTimeout = healthTimeout;
+    this.readinessTimeout = readinessTimeout;
+    this.recommendationsTimeout = recommendationsTimeout;
+    this.paperStartTimeout = paperStartTimeout;
+    this.paperStatusTimeout = paperStatusTimeout;
+    this.paperStopTimeout = paperStopTimeout;
   }
 
   AiServerClient(AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stub, int timeout) {
-    this(stub, timeout, 0);
+    this(stub, timeout, timeout, timeout, timeout, timeout, timeout, timeout);
   }
 
   private AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stubWithDeadline() {
-    return stub.withDeadlineAfter(timeout, TimeUnit.SECONDS);
+    return stubWithDeadline(timeout);
   }
 
-  private AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stubWithDeadline(int timeoutSeconds) {
-    return stub.withDeadlineAfter(timeoutSeconds, TimeUnit.SECONDS);
+  private AiBeBridgeServiceGrpc.AiBeBridgeServiceBlockingStub stubWithDeadline(int seconds) {
+    return stub.withDeadlineAfter(Math.max(1, seconds), TimeUnit.SECONDS);
   }
 
   private <T> T execute(String operation, Supplier<T> call) {
@@ -155,7 +171,10 @@ public class AiServerClient {
             .setBundleId(bundleId != null ? bundleId : "")
             .build();
     HealthCheckResponse response =
-        execute("healthCheck", () -> stubWithDeadline().healthCheck(request));
+        execute(
+            "healthCheck",
+            healthTimeout,
+            () -> stubWithDeadline(healthTimeout).healthCheck(request));
     log.info("[AI Client] 헬스체크: {}", response.getStatus());
     return response;
   }
@@ -167,7 +186,10 @@ public class AiServerClient {
             .setBundleId(bundleId != null ? bundleId : "")
             .setIncludeDetails(true)
             .build();
-    return execute("getServiceReadiness", () -> stubWithDeadline().getServiceReadiness(request));
+    return execute(
+        "getServiceReadiness",
+        readinessTimeout,
+        () -> stubWithDeadline(readinessTimeout).getServiceReadiness(request));
   }
 
   public void publishPortfolioPatch(PortfolioPatchEnvelope envelope) {
@@ -244,7 +266,9 @@ public class AiServerClient {
       builder.setIntervalSec(intervalSec);
     }
     return execute(
-        "startPaperAutoTrading", () -> stubWithDeadline().startPaperAutoTrading(builder.build()));
+        "startPaperAutoTrading",
+        paperStartTimeout,
+        () -> stubWithDeadline(paperStartTimeout).startPaperAutoTrading(builder.build()));
   }
 
   public StopPaperAutoTradingResponse stopPaperAutoTrading(String requestId, String aiSessionId) {
@@ -253,14 +277,19 @@ public class AiServerClient {
             .setRequestId(requestId)
             .setSessionId(aiSessionId != null ? aiSessionId : "")
             .build();
-    return execute("stopPaperAutoTrading", () -> stubWithDeadline().stopPaperAutoTrading(request));
+    return execute(
+        "stopPaperAutoTrading",
+        paperStopTimeout,
+        () -> stubWithDeadline(paperStopTimeout).stopPaperAutoTrading(request));
   }
 
   public PaperAutoTradingStatusResponse getPaperAutoTradingStatus(String requestId) {
     GetPaperAutoTradingStatusRequest request =
         GetPaperAutoTradingStatusRequest.newBuilder().setRequestId(requestId).build();
     return execute(
-        "getPaperAutoTradingStatus", () -> stubWithDeadline().getPaperAutoTradingStatus(request));
+        "getPaperAutoTradingStatus",
+        paperStatusTimeout,
+        () -> stubWithDeadline(paperStatusTimeout).getPaperAutoTradingStatus(request));
   }
 
   private static List<String> safeTickers(List<String> tickers) {

@@ -12,12 +12,15 @@ import com.example.elephantfinancelab_be.domain.autotrading.entity.AutoTradingSe
 import com.example.elephantfinancelab_be.domain.autotrading.exception.AutoTradingException;
 import com.example.elephantfinancelab_be.domain.autotrading.exception.code.AutoTradingErrorCode;
 import com.example.elephantfinancelab_be.domain.autotrading.repository.AutoTradingSessionRepository;
+import com.example.elephantfinancelab_be.domain.recommendation.entity.Recommendation;
 import com.example.elephantfinancelab_be.domain.recommendation.entity.UserSelectedRecommendation;
 import com.example.elephantfinancelab_be.domain.recommendation.repository.UserSelectedRecommendationRepository;
 import com.example.elephantfinancelab_be.global.apiPayload.code.AiServerErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.AiServerException;
 import com.example.elephantfinancelab_be.global.apiPayload.util.AiDetailSanitizer;
 import com.example.elephantfinancelab_be.global.config.AiServerClient;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
@@ -36,6 +39,7 @@ import org.springframework.stereotype.Service;
 public class AutoTradingCommandServiceImpl implements AutoTradingCommandService {
 
   private static final String ACTIVE_SLOT = "SHARED_KIS_VIRTUAL_ACCOUNT";
+  private static final int MIN_PAPER_INTERVAL_SEC = 60;
 
   private final AutoTradingSessionRepository autoTradingSessionRepository;
   private final UserSelectedRecommendationRepository userSelectedRecommendationRepository;
@@ -47,6 +51,14 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
   @Value("${ai.paper-auto.confirm-phrase:PAPER_AUTO_OK}")
   private String confirmPhrase;
 
+  @Value("${ai.recommendations.cache.max-age-seconds:180}")
+  private long recommendationStartMaxAgeSeconds;
+
+  @Value("${ai.recommendations.cache.max-future-skew-seconds:5}")
+  private long recommendationMaxFutureSkewSeconds;
+
+  private Clock clock = Clock.systemUTC();
+
   @Override
   public AutoTradingResDTO.Session startSession(
       Long userId, String idempotencyKey, AutoTradingReqDTO.StartSession request) {
@@ -56,7 +68,7 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     }
     validatePurchaseOption(request.getPurchaseOptionId());
     validateNonNegative(request.getCycles(), "cycles");
-    validateNonNegative(request.getIntervalSec(), "intervalSec");
+    validateMinIntervalSec(request.getIntervalSec());
     List<Long> recommendationIds = request.getRecommendationIds().stream().distinct().toList();
     String requestedBundleId = normalizeBundleId(request.getBundleId());
     String resolvedBundleId = resolveBundleId(requestedBundleId);
@@ -85,7 +97,7 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     }
     validatePurchaseOption(purchaseOptionId);
     validateNonNegative(cycles, "cycles");
-    validateNonNegative(intervalSec, "intervalSec");
+    validateMinIntervalSec(intervalSec);
     String resolvedBundleId = resolveBundleId(null);
     return startResolvedSession(
         userId,
@@ -316,13 +328,18 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     List<UserSelectedRecommendation> selected =
         userSelectedRecommendationRepository.findAllByUserIdAndRecommendation_IdIn(
             userId, recommendationIds);
+    Map<Long, Recommendation> recommendationById = new LinkedHashMap<>();
     Map<Long, String> tickerByRecommendationId = new LinkedHashMap<>();
     Map<Long, String> bundleByRecommendationId = new LinkedHashMap<>();
     for (UserSelectedRecommendation item : selected) {
-      tickerByRecommendationId.putIfAbsent(
-          item.getRecommendation().getId(), item.getRecommendation().getTickerCode());
+      Recommendation recommendation = item.getRecommendation();
+      if (recommendation == null || recommendation.getId() == null) {
+        continue;
+      }
+      recommendationById.putIfAbsent(recommendation.getId(), recommendation);
+      tickerByRecommendationId.putIfAbsent(recommendation.getId(), recommendation.getTickerCode());
       bundleByRecommendationId.putIfAbsent(
-          item.getRecommendation().getId(), item.getRecommendation().getModelBundleId());
+          recommendation.getId(), recommendation.getModelBundleId());
     }
     if (!tickerByRecommendationId.keySet().containsAll(recommendationIds)) {
       throw new AutoTradingException(AutoTradingErrorCode.INVALID_RECOMMENDATIONS);
@@ -340,11 +357,33 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
       throw new AutoTradingException(
           AutoTradingErrorCode.READINESS_GATE_BLOCKED, "recommendation_bundle_mismatch");
     }
+    recommendationIds.forEach(
+        id -> validateSelectedRecommendationFreshness(recommendationById.get(id)));
     return recommendationIds.stream()
         .map(tickerByRecommendationId::get)
         .map(String::trim)
         .distinct()
         .toList();
+  }
+
+  private void validateSelectedRecommendationFreshness(Recommendation recommendation) {
+    if (recommendation == null || recommendation.getModelGeneratedAt() == null) {
+      throw new AutoTradingException(
+          AutoTradingErrorCode.READINESS_GATE_BLOCKED, "recommendation_generated_at_missing");
+    }
+    OffsetDateTime generatedAt = recommendation.getModelGeneratedAt();
+    OffsetDateTime now = OffsetDateTime.now(clock);
+    if (generatedAt
+        .toInstant()
+        .isAfter(now.plusSeconds(recommendationMaxFutureSkewSeconds).toInstant())) {
+      throw new AutoTradingException(
+          AutoTradingErrorCode.READINESS_GATE_BLOCKED, "recommendation_generated_at_invalid");
+    }
+    long ageSec = Math.max(0L, Duration.between(generatedAt, now).getSeconds());
+    if (ageSec > recommendationStartMaxAgeSeconds) {
+      throw new AutoTradingException(
+          AutoTradingErrorCode.READINESS_GATE_BLOCKED, "recommendation_cache_stale");
+    }
   }
 
   private void requirePaperAutoReadiness(String resolvedBundleId) {
@@ -424,6 +463,13 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
   private static void validateNonNegative(Integer value, String fieldName) {
     if (value != null && value < 0) {
       throw new IllegalArgumentException(fieldName + " must be non-negative");
+    }
+  }
+
+  private static void validateMinIntervalSec(Integer value) {
+    if (value != null && value != 0 && value < MIN_PAPER_INTERVAL_SEC) {
+      throw new IllegalArgumentException(
+          "intervalSec must be at least " + MIN_PAPER_INTERVAL_SEC + " seconds");
     }
   }
 

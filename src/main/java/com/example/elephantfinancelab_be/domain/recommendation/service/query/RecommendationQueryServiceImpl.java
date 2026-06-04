@@ -69,11 +69,13 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
   @Value("${ai.recommendations.cache.max-age-seconds:180}")
   private long cacheMaxAgeSeconds;
 
-  @Value("${ai.recommendations.cache.serve-stale:true}")
-  private boolean serveStaleCache;
+  @Value(
+      "${ai.recommendations.cache.display-max-age-seconds:${ai.recommendations.cache.max-stale-age-seconds:86400}}")
+  private long cacheDisplayMaxAgeSeconds;
 
-  @Value("${ai.recommendations.cache.max-stale-age-seconds:86400}")
-  private long cacheMaxStaleAgeSeconds;
+  @Value(
+      "${ai.recommendations.cache.allow-stale-display:${ai.recommendations.cache.serve-stale:true}}")
+  private boolean allowStaleDisplay;
 
   @Value("${ai.recommendations.cache.max-future-skew-seconds:5}")
   private long cacheMaxFutureSkewSeconds;
@@ -86,6 +88,8 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
     if (cacheReadEnabled) {
       try {
         return findCachedRecommendationList(email);
+      } catch (TooStaleForDisplayException e) {
+        throw e;
       } catch (GeneralException e) {
         log.info(
             "[Recommendation] cached recommendations unavailable. refreshing from AI. code={}",
@@ -147,14 +151,7 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
     OffsetDateTime latestGeneratedAt = latest.getModelGeneratedAt();
     long cacheAgeSec = cacheAgeSec(latestGeneratedAt);
     boolean stale = cacheAgeSec > cacheMaxAgeSeconds;
-    if (stale && !canServeStaleCache(cacheAgeSec)) {
-      log.warn(
-          "[Recommendation] cached model recommendations stale: generatedAt={}, ageSec={}, maxAgeSec={}",
-          formatGeneratedAt(latestGeneratedAt),
-          cacheAgeSec,
-          cacheMaxAgeSeconds);
-      throw new GeneralException(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
-    }
+    rejectIfTooStaleForDisplay(latestGeneratedAt, cacheAgeSec, stale);
     List<Recommendation> savedRecommendations =
         recommendationRepository.findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
             latestGeneratedAt, latest.getModelBundleId());
@@ -164,18 +161,18 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
     }
     if (stale) {
       log.warn(
-          "[Recommendation] returning stale cached model recommendations: generatedAt={}, ageSec={}, maxAgeSec={}, maxStaleAgeSec={}",
+          "[Recommendation] returning stale cached model recommendations: generatedAt={}, ageSec={}, freshMaxAgeSec={}, displayMaxAgeSec={}",
           formatGeneratedAt(latestGeneratedAt),
           cacheAgeSec,
           cacheMaxAgeSeconds,
-          cacheMaxStaleAgeSeconds);
+          cacheDisplayMaxAgeSeconds);
     }
     List<RecommendationResDTO.RecommendationInfoDTO> infoList =
         toRecommendationInfoDTOs(email, savedRecommendations);
     return RecommendationConverter.toRecommendationListDTO(
         "사용자 맞춤 투자 추천 리스트",
         "PASS",
-        stale ? "cached_recommendations_stale" : "cached_recommendations",
+        "cached_recommendations",
         formatGeneratedAt(latestGeneratedAt),
         latest.getModelBundleId(),
         latest.getModelVersion(),
@@ -183,7 +180,7 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
         "cached",
         cacheAgeSec,
         stale,
-        stale ? "cache_age_exceeded" : null,
+        stale ? "cache_stale" : null,
         infoList);
   }
 
@@ -195,7 +192,13 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
             .findById(recommendationId)
             .orElseThrow(
                 () -> new GeneralException(RecommendationErrorCode.RECOMMENDATION_NOT_FOUND));
-    return RecommendationConverter.toRecommendationDetailDTO(recommendation, "맞춤형 투자 전략 분석");
+    DetailCacheState cacheState = detailCacheState(recommendation.getModelGeneratedAt());
+    return RecommendationConverter.toRecommendationDetailDTO(
+        recommendation,
+        "맞춤형 투자 전략 분석",
+        cacheState.cacheAgeSec(),
+        cacheState.stale(),
+        cacheState.staleReason());
   }
 
   @Override
@@ -205,7 +208,13 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
             .findByTickerCodeIgnoreCase(stockCode.trim())
             .orElseThrow(
                 () -> new GeneralException(RecommendationErrorCode.RECOMMENDATION_NOT_FOUND));
-    return RecommendationConverter.toRecommendationDetailDTO(recommendation, "맞춤형 투자 전략 분석");
+    DetailCacheState cacheState = detailCacheState(recommendation.getModelGeneratedAt());
+    return RecommendationConverter.toRecommendationDetailDTO(
+        recommendation,
+        "맞춤형 투자 전략 분석",
+        cacheState.cacheAgeSec(),
+        cacheState.stale(),
+        cacheState.staleReason());
   }
 
   @Override
@@ -315,8 +324,32 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
     return Math.max(0L, ageSec);
   }
 
-  private boolean canServeStaleCache(long cacheAgeSec) {
-    return serveStaleCache && cacheMaxStaleAgeSeconds > 0 && cacheAgeSec <= cacheMaxStaleAgeSeconds;
+  private DetailCacheState detailCacheState(OffsetDateTime generated) {
+    if (generated == null) {
+      return new DetailCacheState(null, true, "recommendation_generated_at_missing");
+    }
+    OffsetDateTime now = OffsetDateTime.now(clock);
+    if (generated.toInstant().isAfter(now.plusSeconds(cacheMaxFutureSkewSeconds).toInstant())) {
+      return new DetailCacheState(null, true, "recommendation_generated_at_invalid");
+    }
+    long cacheAgeSec = Math.max(0L, Duration.between(generated, now).getSeconds());
+    boolean stale = cacheAgeSec > cacheMaxAgeSeconds;
+    rejectIfTooStaleForDisplay(generated, cacheAgeSec, stale);
+    return new DetailCacheState(cacheAgeSec, stale, stale ? "cache_stale" : null);
+  }
+
+  private void rejectIfTooStaleForDisplay(
+      OffsetDateTime generatedAt, long cacheAgeSec, boolean stale) {
+    if (!stale || (allowStaleDisplay && cacheAgeSec <= cacheDisplayMaxAgeSeconds)) {
+      return;
+    }
+    log.warn(
+        "[Recommendation] cached model recommendations too stale for display: generatedAt={}, ageSec={}, freshMaxAgeSec={}, displayMaxAgeSec={}",
+        formatGeneratedAt(generatedAt),
+        cacheAgeSec,
+        cacheMaxAgeSeconds,
+        cacheDisplayMaxAgeSeconds);
+    throw new TooStaleForDisplayException();
   }
 
   private Recommendation findLatestCachedRecommendation() {
@@ -344,5 +377,13 @@ public class RecommendationQueryServiceImpl implements RecommendationQueryServic
 
   private String formatGeneratedAt(OffsetDateTime generatedAt) {
     return generatedAt == null ? null : MODEL_GENERATED_AT_FORMATTER.format(generatedAt);
+  }
+
+  private record DetailCacheState(Long cacheAgeSec, boolean stale, String staleReason) {}
+
+  private static final class TooStaleForDisplayException extends GeneralException {
+    private TooStaleForDisplayException() {
+      super(RecommendationErrorCode.MODEL_RECOMMENDATION_UNAVAILABLE);
+    }
   }
 }

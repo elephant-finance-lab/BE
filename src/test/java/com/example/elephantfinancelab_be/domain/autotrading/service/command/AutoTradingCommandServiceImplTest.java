@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -28,6 +30,10 @@ import com.example.elephantfinancelab_be.domain.recommendation.repository.UserSe
 import com.example.elephantfinancelab_be.global.apiPayload.code.AiServerErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.AiServerException;
 import com.example.elephantfinancelab_be.global.config.AiServerClient;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,6 +55,10 @@ class AutoTradingCommandServiceImplTest {
   void setUp() {
     ReflectionTestUtils.setField(service, "bundleId", "BUNDLE-TEST");
     ReflectionTestUtils.setField(service, "confirmPhrase", "PAPER_AUTO_OK");
+    ReflectionTestUtils.setField(service, "recommendationStartMaxAgeSeconds", 180L);
+    ReflectionTestUtils.setField(service, "recommendationMaxFutureSkewSeconds", 5L);
+    ReflectionTestUtils.setField(
+        service, "clock", Clock.fixed(Instant.parse("2026-06-01T01:01:00Z"), ZoneOffset.UTC));
     when(sessionRepository.saveAndFlush(any(AutoTradingSession.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
   }
@@ -78,6 +88,75 @@ class AutoTradingCommandServiceImplTest {
     assertThat(result.getSelectedTickers()).containsExactly("005930");
     verify(aiServerClient)
         .startPaperAutoTrading(anyString(), anyString(), any(), any(), any(), anyString());
+  }
+
+  @Test
+  void rejectsSubMinutePaperAutoIntervalBeforeAiCall() {
+    AutoTradingReqDTO.StartSession request = request();
+    ReflectionTestUtils.setField(request, "intervalSec", 10);
+
+    assertThatThrownBy(() -> service.startSession(1L, "idempotency-short-interval", request))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("intervalSec must be at least 60");
+
+    verifyNoInteractions(selectedRepository, aiServerClient);
+  }
+
+  @Test
+  void startsPaperAutoSessionWithNullCyclesAndIntervalForAiDefaults() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-ai-default-null"))
+        .thenReturn(Optional.empty());
+    when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+        .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
+    when(aiServerClient.startPaperAutoTrading(
+            anyString(), anyString(), any(), any(), any(), anyString()))
+        .thenReturn(
+            StartPaperAutoTradingResponse.newBuilder()
+                .setAccepted(true)
+                .setStatus("STARTED")
+                .setSessionId("ai-session-default-null")
+                .build());
+    AutoTradingReqDTO.StartSession request = request();
+    ReflectionTestUtils.setField(request, "cycles", null);
+    ReflectionTestUtils.setField(request, "intervalSec", null);
+
+    AutoTradingResDTO.Session result =
+        service.startSession(1L, "idempotency-ai-default-null", request);
+
+    assertThat(result.getStatus()).isEqualTo(AutoTradingSessionStatus.RUNNING);
+    verify(aiServerClient)
+        .startPaperAutoTrading(
+            anyString(), anyString(), isNull(), isNull(), any(), eq("PAPER_AUTO_OK"));
+  }
+
+  @Test
+  void startsPaperAutoSessionWithZeroCyclesAndIntervalForAiDefaults() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-ai-default-zero"))
+        .thenReturn(Optional.empty());
+    when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+        .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
+    when(aiServerClient.startPaperAutoTrading(
+            anyString(), anyString(), any(), any(), any(), anyString()))
+        .thenReturn(
+            StartPaperAutoTradingResponse.newBuilder()
+                .setAccepted(true)
+                .setStatus("STARTED")
+                .setSessionId("ai-session-default-zero")
+                .build());
+    AutoTradingReqDTO.StartSession request = request();
+    ReflectionTestUtils.setField(request, "cycles", 0);
+    ReflectionTestUtils.setField(request, "intervalSec", 0);
+
+    AutoTradingResDTO.Session result =
+        service.startSession(1L, "idempotency-ai-default-zero", request);
+
+    assertThat(result.getStatus()).isEqualTo(AutoTradingSessionStatus.RUNNING);
+    verify(aiServerClient)
+        .startPaperAutoTrading(anyString(), anyString(), eq(0), eq(0), any(), eq("PAPER_AUTO_OK"));
   }
 
   @Test
@@ -561,6 +640,52 @@ class AutoTradingCommandServiceImplTest {
   }
 
   @Test
+  void rejectsStartWhenSelectedRecommendationGeneratedAtIsMissing() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
+        .thenReturn(Optional.empty());
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+        .thenReturn(
+            List.of(selectedRecommendationWithGeneratedAt(1L, "005930", "BUNDLE-TEST", null)));
+
+    assertThatThrownBy(() -> service.startSession(1L, "idempotency-1", request()))
+        .isInstanceOf(AutoTradingException.class)
+        .satisfies(
+            exception -> {
+              assertThat(exception).hasMessageContaining("recommendation_generated_at_missing");
+              assertThat(((AutoTradingException) exception).getCode())
+                  .isEqualTo(AutoTradingErrorCode.READINESS_GATE_BLOCKED);
+            });
+
+    verify(aiServerClient, never()).getServiceReadiness(anyString());
+    verify(aiServerClient, never())
+        .startPaperAutoTrading(anyString(), anyString(), any(), any(), any(), anyString());
+  }
+
+  @Test
+  void rejectsStartWhenSelectedRecommendationIsStale() {
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
+        .thenReturn(Optional.empty());
+    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+        .thenReturn(
+            List.of(
+                selectedRecommendationWithGeneratedAt(
+                    1L, "005930", "BUNDLE-TEST", "2026-06-01T09:55:00+09:00")));
+
+    assertThatThrownBy(() -> service.startSession(1L, "idempotency-1", request()))
+        .isInstanceOf(AutoTradingException.class)
+        .satisfies(
+            exception -> {
+              assertThat(exception).hasMessageContaining("recommendation_cache_stale");
+              assertThat(((AutoTradingException) exception).getCode())
+                  .isEqualTo(AutoTradingErrorCode.READINESS_GATE_BLOCKED);
+            });
+
+    verify(aiServerClient, never()).getServiceReadiness(anyString());
+    verify(aiServerClient, never())
+        .startPaperAutoTrading(anyString(), anyString(), any(), any(), any(), anyString());
+  }
+
+  @Test
   void treatsAiNotRunningStopResponseAsAlreadyStopped() {
     AutoTradingSession session =
         AutoTradingSession.builder()
@@ -595,7 +720,7 @@ class AutoTradingCommandServiceImplTest {
     ReflectionTestUtils.setField(request, "recommendationIds", recommendationIds);
     ReflectionTestUtils.setField(request, "purchaseOptionId", 2);
     ReflectionTestUtils.setField(request, "cycles", 3);
-    ReflectionTestUtils.setField(request, "intervalSec", 10);
+    ReflectionTestUtils.setField(request, "intervalSec", 60);
     return request;
   }
 
@@ -611,8 +736,18 @@ class AutoTradingCommandServiceImplTest {
 
   private static UserSelectedRecommendation selectedRecommendation(
       Long id, String ticker, String bundleId) {
+    return selectedRecommendationWithGeneratedAt(id, ticker, bundleId, "2026-06-01T10:00:00+09:00");
+  }
+
+  private static UserSelectedRecommendation selectedRecommendationWithGeneratedAt(
+      Long id, String ticker, String bundleId, String generatedAt) {
     Recommendation recommendation =
-        Recommendation.builder().id(id).tickerCode(ticker).modelBundleId(bundleId).build();
+        Recommendation.builder()
+            .id(id)
+            .tickerCode(ticker)
+            .modelBundleId(bundleId)
+            .modelGeneratedAt(generatedAt == null ? null : OffsetDateTime.parse(generatedAt))
+            .build();
     return UserSelectedRecommendation.builder().userId(1L).recommendation(recommendation).build();
   }
 

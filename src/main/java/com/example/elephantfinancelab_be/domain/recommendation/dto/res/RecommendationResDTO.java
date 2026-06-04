@@ -92,6 +92,12 @@ public class RecommendationResDTO {
     private String bundleId;
     private String modelGeneratedAt;
     private String modelAsof;
+    private Long cacheAgeSec;
+    private Boolean stale;
+    private String staleReason;
+    private Boolean advisoryOnly;
+    private Boolean safeToEnableOrderActions;
+    private Boolean liveTradingAllowed;
   }
 
   @Builder
