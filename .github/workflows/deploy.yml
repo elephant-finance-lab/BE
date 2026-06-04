@@ -9,9 +9,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: be-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -22,15 +27,19 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
+          cache: gradle
 
       - name: Grant execute permission
         run: chmod +x gradlew
 
-      - name: Build
-        run: ./gradlew clean bootJar -x test
+      - name: Test and Build
+        run: ./gradlew clean test bootJar
+
+      - name: Show artifact
+        run: ls -lh build/libs
 
       - name: Copy Jar to EC2
-        uses: appleboy/scp-action@master
+        uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
@@ -40,7 +49,7 @@ jobs:
           strip_components: 2
 
       - name: Deploy
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
@@ -48,7 +57,8 @@ jobs:
           script: |
             cd /home/ubuntu/app
 
-            JAR_FILE=$(ls -t *.jar 2>/dev/null | head -n 1)
+            PREVIOUS_JAR=$(readlink app.jar || true)
+            JAR_FILE=$(find . -maxdepth 1 -type f -name "*.jar" ! -name "*-plain.jar" -printf "%T@ %f\n" | sort -nr | head -n 1 | cut -d' ' -f2-)
 
             if [ -z "$JAR_FILE" ]; then
               echo "No jar file found in /home/ubuntu/app"
@@ -60,14 +70,23 @@ jobs:
             sudo systemctl daemon-reload
             sudo systemctl restart elephant.service
 
-            sleep 10
+            for attempt in $(seq 1 12); do
+              if curl --fail --silent --show-error http://127.0.0.1:8080/ > /dev/null; then
+                echo "Application health check passed"
+                sudo systemctl status elephant.service --no-pager
+                exit 0
+              fi
+              sleep 5
+            done
 
-            if sudo systemctl is-active --quiet elephant.service; then
-              echo "elephant.service is running"
-              sudo systemctl status elephant.service --no-pager
-            else
-              echo "elephant.service failed to start"
-              sudo systemctl status elephant.service --no-pager || true
-              sudo journalctl -u elephant.service -n 100 --no-pager
-              exit 1
+            echo "Application health check failed"
+            sudo systemctl status elephant.service --no-pager || true
+            sudo journalctl -u elephant.service -n 100 --no-pager
+
+            if [ -n "$PREVIOUS_JAR" ] && [ -f "$PREVIOUS_JAR" ]; then
+              echo "Rolling back to $PREVIOUS_JAR"
+              ln -sfn "$PREVIOUS_JAR" app.jar
+              sudo systemctl restart elephant.service
             fi
+
+            exit 1

@@ -81,6 +81,10 @@ tasks.named('test') {
 	enabled = !skipTests
 }
 
+tasks.named('jar') {
+	enabled = false
+}
+
 def querydslDir = "src/main/generated"
 
 sourceSets {
