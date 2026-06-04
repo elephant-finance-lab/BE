@@ -14,6 +14,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.web.authentication.logout.SimpleUrlLogoutSuccessHandler;
 import org.springframework.stereotype.Component;
+import org.springframework.web.util.UriComponentsBuilder;
 
 @Component
 @RequiredArgsConstructor
@@ -26,6 +27,12 @@ public class CustomLogoutSuccessHandler extends SimpleUrlLogoutSuccessHandler {
 
   @Value("${app.auth.refresh-cookie-secure:false}")
   private boolean refreshCookieSecure;
+
+  @Value("${app.auth.refresh-cookie-same-site:Strict}")
+  private String refreshCookieSameSite = "Strict";
+
+  @Value("${app.oauth2.logout-redirect-uri:http://localhost:5173/login}")
+  private String logoutRedirectUri;
 
   private void revokeRefreshToken(HttpServletRequest request) {
     String bearer = request.getHeader(HttpHeaders.AUTHORIZATION);
@@ -44,7 +51,7 @@ public class CustomLogoutSuccessHandler extends SimpleUrlLogoutSuccessHandler {
             .secure(refreshCookieSecure)
             .path("/api/auth/token")
             .maxAge(Duration.ZERO)
-            .sameSite("Strict")
+            .sameSite(refreshCookieSameSite)
             .build();
 
     response.addHeader(HttpHeaders.SET_COOKIE, expiredCookie.toString());
@@ -66,12 +73,18 @@ public class CustomLogoutSuccessHandler extends SimpleUrlLogoutSuccessHandler {
       String registrationId = token.getAuthorizedClientRegistrationId();
 
       if ("naver".equals(registrationId)) {
-        redirectUrl = "https://nid.naver.com/nidlogin.logout?returl=http://localhost:8080";
+        redirectUrl =
+            UriComponentsBuilder.fromUriString("https://nid.naver.com/nidlogin.logout")
+                .queryParam("returl", logoutRedirectUri)
+                .build()
+                .toUriString();
       } else if ("kakao".equals(registrationId)) {
         redirectUrl =
-            "https://kauth.kakao.com/oauth/logout?client_id="
-                + kakaoClientId
-                + "&logout_redirect_uri=http://localhost:8080";
+            UriComponentsBuilder.fromUriString("https://kauth.kakao.com/oauth/logout")
+                .queryParam("client_id", kakaoClientId)
+                .queryParam("logout_redirect_uri", logoutRedirectUri)
+                .build()
+                .toUriString();
       }
 
       getRedirectStrategy().sendRedirect(request, response, redirectUrl);

@@ -22,7 +22,7 @@ Also set DB vars used by `src/main/resources/application.yml`:
 ```powershell
 $env:DB_URL="jdbc:mysql://localhost:3306/your_db"
 $env:DB_USER="root"
-$env:DB_PW="your_password"
+$env:DB_PASSWORD="your_password"
 ```
 
 ### 3) Run locally
@@ -77,6 +77,9 @@ export AI_SERVER_PORT=50051
 export AI_SERVER_TIMEOUT=5
 export AI_PAPER_BUNDLE_ID="<paper-ready-bundle-id>"
 export AI_PAPER_CONFIRM_PHRASE=PAPER_AUTO_OK
+
+# Optional local-only schema auto update while developing entity changes.
+export SPRING_JPA_HIBERNATE_DDL_AUTO=update
 
 # BE market-data clients use the real KIS endpoint and real credentials.
 export KIS_FINANCIAL_APP_KEY="<real-market-data-app-key>"
@@ -143,9 +146,13 @@ stored `aiSessionId`. In this first integration, it also reconciles a stopped
 session to `STOPPED` and a finished running session to `COMPLETED`, releasing
 the shared-account active slot.
 
-With `spring.jpa.hibernate.ddl-auto=update`, inspect the generated
-`auto_trading_sessions` table to verify `STARTING`, `RUNNING`, `STOPPING`,
-`STOPPED`, `FAILED`, or `COMPLETED` state changes.
+When using `SPRING_JPA_HIBERNATE_DDL_AUTO=update` in local development,
+inspect the generated `auto_trading_sessions` table to verify `STARTING`,
+`RUNNING`, `STOPPING`, `STOPPED`, `FAILED`, or `COMPLETED` state changes.
+
+For deployment, keep `SPRING_JPA_HIBERNATE_DDL_AUTO=validate` and apply any
+schema changes before restarting the application. A migration tool such as
+Flyway or Liquibase is recommended for production schema changes.
 
 ### 4) Failure and excluded behavior
 
