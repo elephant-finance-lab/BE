@@ -31,6 +31,8 @@ public class StockChartQueryServiceImpl implements StockChartQueryService {
   private static final Duration ONE_DAY_FETCH_LOCK_TTL = Duration.ofSeconds(20);
   private static final Duration ONE_DAY_FETCH_WAIT_INTERVAL = Duration.ofMillis(300);
   private static final int ONE_DAY_FETCH_WAIT_ATTEMPTS = 50;
+  private static final int CHART_FETCH_ATTEMPTS = 3;
+  private static final Duration CHART_FETCH_RETRY_DELAY = Duration.ofMillis(700);
 
   private final StockResolverService stockResolverService;
   private final StockChartRedisService stockChartRedisService;
@@ -93,7 +95,7 @@ public class StockChartQueryServiceImpl implements StockChartQueryService {
 
     try {
       List<StockChartResDTO.DataPoint> dataPoints =
-          kisStockChartClient.fetchChart(stock.getTicker(), chartRange);
+          fetchChartWithRetry(stock.getTicker(), chartRange);
       StockChartResDTO.Chart chart =
           new StockChartResDTO.Chart(
               stock.getTicker(),
@@ -112,6 +114,36 @@ public class StockChartQueryServiceImpl implements StockChartQueryService {
         releaseOneDayFetchLock(stock.getTicker(), lockToken);
       }
     }
+  }
+
+  private List<StockChartResDTO.DataPoint> fetchChartWithRetry(
+      String ticker, StockChartRange chartRange) {
+    StockException lastException = null;
+    for (int attempt = 1; attempt <= CHART_FETCH_ATTEMPTS; attempt++) {
+      try {
+        return kisStockChartClient.fetchChart(ticker, chartRange);
+      } catch (StockException e) {
+        lastException = e;
+        if (!isRetryableKisChartError(e) || attempt == CHART_FETCH_ATTEMPTS) {
+          throw e;
+        }
+        log.warn(
+            "종목 차트 KIS 조회 재시도. ticker={}, range={}, attempt={}/{}, reason={}",
+            ticker,
+            chartRange.getValue(),
+            attempt,
+            CHART_FETCH_ATTEMPTS,
+            e.getCode().getCode());
+        sleep(CHART_FETCH_RETRY_DELAY);
+      }
+    }
+    throw lastException == null
+        ? new StockException(StockErrorCode.KIS_STOCK_CHART_API_FAILED)
+        : lastException;
+  }
+
+  private boolean isRetryableKisChartError(StockException e) {
+    return e.getCode() == StockErrorCode.KIS_STOCK_CHART_API_FAILED;
   }
 
   private boolean acquireOneDayFetchLock(String ticker, String lockToken) {

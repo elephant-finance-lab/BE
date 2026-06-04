@@ -20,6 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class StockQueryServiceImpl implements StockQueryService {
 
+  private static final int SUMMARY_FETCH_ATTEMPTS = 3;
+
   private final StockResolverService stockResolverService;
   private final StockSummaryRedisService stockSummaryRedisService;
   private final KisStockPriceClient kisStockPriceClient;
@@ -36,10 +38,35 @@ public class StockQueryServiceImpl implements StockQueryService {
     }
 
     Stock stock = stockResolverService.resolve(normalizedTicker);
-    StockResDTO.Summary summary = kisStockPriceClient.fetchSummary(stock);
+    StockResDTO.Summary summary = fetchSummaryWithRetry(stock);
     saveSummaryCache(summary);
     kisStockPriceWebSocketClient.subscribe(stock.getTicker());
     return summary;
+  }
+
+  private StockResDTO.Summary fetchSummaryWithRetry(Stock stock) {
+    return fetchSummaryWithRetry(stock, 1);
+  }
+
+  private StockResDTO.Summary fetchSummaryWithRetry(Stock stock, int attempt) {
+    try {
+      return kisStockPriceClient.fetchSummary(stock);
+    } catch (StockException e) {
+      if (!isRetryableKisSummaryError(e) || attempt >= SUMMARY_FETCH_ATTEMPTS) {
+        throw e;
+      }
+      log.warn(
+          "종목 요약 KIS 조회 재시도. ticker={}, attempt={}/{}, reason={}",
+          stock.getTicker(),
+          attempt,
+          SUMMARY_FETCH_ATTEMPTS,
+          e.getCode().getCode());
+      return fetchSummaryWithRetry(stock, attempt + 1);
+    }
+  }
+
+  private boolean isRetryableKisSummaryError(StockException e) {
+    return e.getCode() == StockErrorCode.KIS_STOCK_PRICE_API_FAILED;
   }
 
   private StockResDTO.Summary findCachedSummary(String ticker) {
