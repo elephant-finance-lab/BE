@@ -8,7 +8,6 @@ import com.example.elephantfinancelab_be.domain.stocks.service.KisStockPriceClie
 import com.example.elephantfinancelab_be.domain.stocks.service.KisStockPriceWebSocketClient;
 import com.example.elephantfinancelab_be.domain.stocks.service.StockResolverService;
 import com.example.elephantfinancelab_be.domain.stocks.service.StockSummaryRedisService;
-import java.time.Duration;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,7 +21,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class StockQueryServiceImpl implements StockQueryService {
 
   private static final int SUMMARY_FETCH_ATTEMPTS = 3;
-  private static final Duration SUMMARY_FETCH_RETRY_DELAY = Duration.ofMillis(400);
 
   private final StockResolverService stockResolverService;
   private final StockSummaryRedisService stockSummaryRedisService;
@@ -47,39 +45,28 @@ public class StockQueryServiceImpl implements StockQueryService {
   }
 
   private StockResDTO.Summary fetchSummaryWithRetry(Stock stock) {
-    StockException lastException = null;
-    for (int attempt = 1; attempt <= SUMMARY_FETCH_ATTEMPTS; attempt++) {
-      try {
-        return kisStockPriceClient.fetchSummary(stock);
-      } catch (StockException e) {
-        lastException = e;
-        if (!isRetryableKisSummaryError(e) || attempt == SUMMARY_FETCH_ATTEMPTS) {
-          throw e;
-        }
-        log.warn(
-            "종목 요약 KIS 조회 재시도. ticker={}, attempt={}/{}, reason={}",
-            stock.getTicker(),
-            attempt,
-            SUMMARY_FETCH_ATTEMPTS,
-            e.getCode().getCode());
-        sleep(SUMMARY_FETCH_RETRY_DELAY);
+    return fetchSummaryWithRetry(stock, 1);
+  }
+
+  private StockResDTO.Summary fetchSummaryWithRetry(Stock stock, int attempt) {
+    try {
+      return kisStockPriceClient.fetchSummary(stock);
+    } catch (StockException e) {
+      if (!isRetryableKisSummaryError(e) || attempt >= SUMMARY_FETCH_ATTEMPTS) {
+        throw e;
       }
+      log.warn(
+          "종목 요약 KIS 조회 재시도. ticker={}, attempt={}/{}, reason={}",
+          stock.getTicker(),
+          attempt,
+          SUMMARY_FETCH_ATTEMPTS,
+          e.getCode().getCode());
+      return fetchSummaryWithRetry(stock, attempt + 1);
     }
-    throw lastException == null
-        ? new StockException(StockErrorCode.KIS_STOCK_PRICE_API_FAILED)
-        : lastException;
   }
 
   private boolean isRetryableKisSummaryError(StockException e) {
     return e.getCode() == StockErrorCode.KIS_STOCK_PRICE_API_FAILED;
-  }
-
-  private void sleep(Duration duration) {
-    try {
-      Thread.sleep(duration.toMillis());
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-    }
   }
 
   private StockResDTO.Summary findCachedSummary(String ticker) {
