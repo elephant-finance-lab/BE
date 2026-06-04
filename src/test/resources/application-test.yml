@@ -44,11 +44,26 @@ kis:
   websocket-url: ws://ops.koreainvestment.com:21000
   websocket-enabled: false
 
+recommendation:
+  fresh-max-age-sec: 180
+  display-max-age-sec: 86400
+  allow-stale-fallback: false
+  stale-fallback-max-age-sec: 86400
+  refresh-stale-before-return: true
+  minimum-ai-response-count: 1
+  minimum-cache-batch-size: 1
+
 ai:
   server:
     host: localhost
     port: 50051
     timeout: 5
+    timeout-health: 3
+    timeout-readiness: 10
+    timeout-recommendations: 5
+    timeout-paper-start: 30
+    timeout-paper-status: 5
+    timeout-paper-stop: 10
   paper-auto:
     bundle-id: BUNDLE-TEST
     confirm-phrase: PAPER_AUTO_OK
@@ -58,7 +73,9 @@ ai:
     include-diagnostics: false
     cache-read-enabled: false
     cache:
-      max-age-seconds: 180
+      max-age-seconds: ${recommendation.fresh-max-age-sec}
+      display-max-age-seconds: ${recommendation.display-max-age-sec}
+      allow-stale-display: true
       max-future-skew-seconds: 5
     refresh:
       enabled: false

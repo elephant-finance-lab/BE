@@ -30,7 +30,6 @@ public class GeneralExceptionAdvice {
         ex.getCode().getCode(),
         ex.getCode().getMessage(),
         ex.getClientMessage());
-    log.debug("GeneralException detail", ex);
     return ResponseEntity.status(ex.getCode().getStatus())
         .body(new ApiResponse<>(false, ex.getCode().getCode(), ex.getClientMessage(), null));
   }
@@ -43,7 +42,6 @@ public class GeneralExceptionAdvice {
         ex.getClientMessage(),
         ex.getGrpcStatusCode(),
         ex.getAiDetail());
-    log.debug("AiServerException detail", ex);
     return ResponseEntity.status(ex.getCode().getStatus())
         .body(new ApiResponse<>(false, ex.getCode().getCode(), ex.getClientMessage(), null));
   }

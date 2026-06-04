@@ -1,12 +1,15 @@
 package com.example.elephantfinancelab_be.domain.stocks.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.example.elephantfinancelab_be.domain.stocks.entity.Stock;
+import com.example.elephantfinancelab_be.domain.stocks.exception.StockException;
+import com.example.elephantfinancelab_be.domain.stocks.exception.code.StockErrorCode;
 import com.example.elephantfinancelab_be.domain.stocks.repository.StockRepository;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -44,5 +47,33 @@ class StockResolverServiceTest {
     assertThat(result).isSameAs(stock);
     verify(kisStockBasicInfoClient).fetchStockName("203650");
     verify(stockRegistrationService).saveIfAbsent("203650", "드림시큐리티");
+  }
+
+  @Test
+  void registersTickerFallbackWhenVirtualBasicInfoApiIsUnavailable() {
+    Stock stock = Stock.builder().ticker("006400").name("006400").build();
+    when(stockRepository.findByTicker("006400")).thenReturn(Optional.empty());
+    when(kisStockBasicInfoClient.fetchStockName("006400"))
+        .thenThrow(new StockException(StockErrorCode.KIS_STOCK_BASIC_INFO_API_FAILED));
+    when(stockRegistrationService.saveIfAbsent("006400", "006400")).thenReturn(stock);
+
+    Stock result = service.resolve("006400");
+
+    assertThat(result).isSameAs(stock);
+    verify(kisStockBasicInfoClient).fetchStockName("006400");
+    verify(stockRegistrationService).saveIfAbsent("006400", "006400");
+  }
+
+  @Test
+  void propagatesBasicInfoExceptionWhenErrorIsNotApiFailure() {
+    StockException exception =
+        new StockException(StockErrorCode.KIS_STOCK_BASIC_INFO_RESPONSE_PARSE_FAILED);
+    when(stockRepository.findByTicker("006400")).thenReturn(Optional.empty());
+    when(kisStockBasicInfoClient.fetchStockName("006400")).thenThrow(exception);
+
+    assertThatThrownBy(() -> service.resolve("006400")).isSameAs(exception);
+
+    verify(kisStockBasicInfoClient).fetchStockName("006400");
+    verifyNoInteractions(stockRegistrationService);
   }
 }

@@ -2,6 +2,7 @@ package com.example.elephantfinancelab_be.domain.recommendation.scheduler;
 
 import com.example.elephantfinancelab_be.domain.recommendation.dto.res.RecommendationResDTO;
 import com.example.elephantfinancelab_be.domain.recommendation.service.query.RecommendationQueryService;
+import com.example.elephantfinancelab_be.global.apiPayload.exception.GeneralException;
 import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -80,6 +81,11 @@ public class RecommendationRefreshScheduler {
           refreshed.getModelStatus(),
           count,
           refreshed.getAsof());
+    } catch (GeneralException e) {
+      log.warn(
+          "[RecommendationRefresh] AI recommendation refresh skipped: code={}, message={}",
+          e.getCode().getCode(),
+          e.getMessage());
     } catch (RuntimeException e) {
       log.warn("[RecommendationRefresh] AI recommendation refresh skipped: {}", e.getMessage(), e);
     }

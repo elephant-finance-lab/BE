@@ -44,13 +44,28 @@ public class StockResolverService {
   }
 
   private Stock fetchAndRegister(String ticker) {
-    String stockName = kisStockBasicInfoClient.fetchStockName(ticker);
+    String stockName = fetchStockNameOrTicker(ticker);
     try {
       Stock stock = stockRegistrationService.saveIfAbsent(ticker, stockName);
       log.info("외부 종목 기본정보 DB 등록 완료. ticker={}, name={}", ticker, stock.getName());
       return stock;
     } catch (DataIntegrityViolationException e) {
       return stockRepository.findByTicker(ticker).orElseThrow(() -> e);
+    }
+  }
+
+  private String fetchStockNameOrTicker(String ticker) {
+    try {
+      return kisStockBasicInfoClient.fetchStockName(ticker);
+    } catch (StockException e) {
+      if (e.getCode() != StockErrorCode.KIS_STOCK_BASIC_INFO_API_FAILED) {
+        throw e;
+      }
+      log.warn(
+          "종목 기본정보 조회 실패로 ticker fallback을 사용합니다. ticker={}, reason={}",
+          ticker,
+          e.getCode().getCode());
+      return ticker;
     }
   }
 

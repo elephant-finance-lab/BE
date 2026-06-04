@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -51,7 +52,8 @@ public class AiServerClient {
       @Value("${ai.server.timeout}") int timeout,
       @Value("${ai.server.timeout-health:3}") int healthTimeout,
       @Value("${ai.server.timeout-readiness:10}") int readinessTimeout,
-      @Value("${ai.server.timeout-recommendations:90}") int recommendationsTimeout,
+      @Value("${ai.server.timeout-recommendations:${ai.server.recommendations-timeout:90}}")
+          int recommendationsTimeout,
       @Value("${ai.server.timeout-paper-start:30}") int paperStartTimeout,
       @Value("${ai.server.timeout-paper-status:5}") int paperStatusTimeout,
       @Value("${ai.server.timeout-paper-stop:10}") int paperStopTimeout) {
@@ -77,14 +79,60 @@ public class AiServerClient {
     return stub.withDeadlineAfter(Math.max(1, seconds), TimeUnit.SECONDS);
   }
 
+  private <T> T execute(String operation, Supplier<T> call) {
+    return execute(operation, timeout, call);
+  }
+
+  private <T> T execute(String operation, int timeoutSeconds, Supplier<T> call) {
+    long startedAt = System.nanoTime();
+    try {
+      T result = call.get();
+      log.info(
+          "[AI Client] gRPC success operation={}, timeoutSeconds={}, elapsedMs={}",
+          operation,
+          timeoutSeconds,
+          elapsedMillis(startedAt));
+      return result;
+    } catch (StatusRuntimeException e) {
+      throw mapToAiServerException(e, operation, timeoutSeconds, elapsedMillis(startedAt));
+    }
+  }
+
+  private void executeVoid(String operation, Runnable call) {
+    execute(
+        operation,
+        () -> {
+          call.run();
+          return null;
+        });
+  }
+
   AiServerException mapToAiServerException(StatusRuntimeException e) {
-    String detail = sanitizeAiDetail(e.getStatus().getDescription());
-    log.error(
-        "[AI Client] gRPC 오류 - status: {}, detail: {}",
-        e.getStatus().getCode(),
-        detail == null ? "" : detail);
+    return mapToAiServerException(e, "grpc-call", timeout, 0);
+  }
+
+  private AiServerException mapToAiServerException(
+      StatusRuntimeException e, String operation, int timeoutSeconds, long elapsedMs) {
     Status.Code code = e.getStatus().getCode();
+    String detail = sanitizeAiDetail(e.getStatus().getDescription());
     String grpcStatusCode = code.name();
+    if (code == Status.Code.DEADLINE_EXCEEDED || code == Status.Code.CANCELLED) {
+      log.warn(
+          "[AI Client] gRPC deadline/cancel operation={}, status={}, timeoutSeconds={}, elapsedMs={}, detail={}",
+          operation,
+          code,
+          timeoutSeconds,
+          elapsedMs,
+          detail == null ? "" : detail);
+    } else {
+      log.error(
+          "[AI Client] gRPC error operation={}, status={}, timeoutSeconds={}, elapsedMs={}, detail={}",
+          operation,
+          code,
+          timeoutSeconds,
+          elapsedMs,
+          detail == null ? "" : detail);
+    }
     return switch (code) {
       case INVALID_ARGUMENT ->
           new AiServerException(AiServerErrorCode.AI400_01, grpcStatusCode, detail);
@@ -108,82 +156,67 @@ public class AiServerClient {
     };
   }
 
+  private static long elapsedMillis(long startedAt) {
+    return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+  }
+
   static String sanitizeAiDetail(String raw) {
     return AiDetailSanitizer.sanitize(raw);
   }
 
   public HealthCheckResponse healthCheck(String bundleId) {
-    try {
-      HealthCheckRequest request =
-          HealthCheckRequest.newBuilder()
-              .setRequestId(UUID.randomUUID().toString())
-              .setBundleId(bundleId != null ? bundleId : "")
-              .build();
-      HealthCheckResponse response = stubWithDeadline(healthTimeout).healthCheck(request);
-      log.info("[AI Client] 헬스체크: {}", response.getStatus());
-      return response;
-    } catch (StatusRuntimeException e) {
-      throw mapToAiServerException(e);
-    }
+    HealthCheckRequest request =
+        HealthCheckRequest.newBuilder()
+            .setRequestId(UUID.randomUUID().toString())
+            .setBundleId(bundleId != null ? bundleId : "")
+            .build();
+    HealthCheckResponse response =
+        execute(
+            "healthCheck",
+            healthTimeout,
+            () -> stubWithDeadline(healthTimeout).healthCheck(request));
+    log.info("[AI Client] 헬스체크: {}", response.getStatus());
+    return response;
   }
 
   public ServiceReadinessResponse getServiceReadiness(String bundleId) {
-    try {
-      ServiceReadinessRequest request =
-          ServiceReadinessRequest.newBuilder()
-              .setRequestId(UUID.randomUUID().toString())
-              .setBundleId(bundleId != null ? bundleId : "")
-              .setIncludeDetails(true)
-              .build();
-      return stubWithDeadline(readinessTimeout).getServiceReadiness(request);
-    } catch (StatusRuntimeException e) {
-      throw mapToAiServerException(e);
-    }
+    ServiceReadinessRequest request =
+        ServiceReadinessRequest.newBuilder()
+            .setRequestId(UUID.randomUUID().toString())
+            .setBundleId(bundleId != null ? bundleId : "")
+            .setIncludeDetails(true)
+            .build();
+    return execute(
+        "getServiceReadiness",
+        readinessTimeout,
+        () -> stubWithDeadline(readinessTimeout).getServiceReadiness(request));
   }
 
   public void publishPortfolioPatch(PortfolioPatchEnvelope envelope) {
-    try {
-      stubWithDeadline().publishPortfolioPatch(envelope);
-      log.info("[AI Client] PortfolioPatch 전송 완료: {}", envelope.getPortfolioPatchId());
-    } catch (StatusRuntimeException e) {
-      throw mapToAiServerException(e);
-    }
+    executeVoid("publishPortfolioPatch", () -> stubWithDeadline().publishPortfolioPatch(envelope));
+    log.info("[AI Client] PortfolioPatch 전송 완료: {}", envelope.getPortfolioPatchId());
   }
 
   public void publishFinalDecision(FinalDecisionEnvelope envelope) {
-    try {
-      stubWithDeadline().publishFinalDecision(envelope);
-      log.info("[AI Client] FinalDecision 전송 완료: {}", envelope.getDecisionId());
-    } catch (StatusRuntimeException e) {
-      throw mapToAiServerException(e);
-    }
+    executeVoid("publishFinalDecision", () -> stubWithDeadline().publishFinalDecision(envelope));
+    log.info("[AI Client] FinalDecision 전송 완료: {}", envelope.getDecisionId());
   }
 
   public void publishExecutionFeedback(ExecutionFeedbackEnvelope envelope) {
-    try {
-      stubWithDeadline().publishExecutionFeedback(envelope);
-      log.info("[AI Client] ExecutionFeedback 전송 완료: {}", envelope.getOrderPlanId());
-    } catch (StatusRuntimeException e) {
-      throw mapToAiServerException(e);
-    }
+    executeVoid(
+        "publishExecutionFeedback", () -> stubWithDeadline().publishExecutionFeedback(envelope));
+    log.info("[AI Client] ExecutionFeedback 전송 완료: {}", envelope.getOrderPlanId());
   }
 
   public void publishInternalMessage(InternalMessageEnvelope envelope) {
-    try {
-      stubWithDeadline().publishInternalMessage(envelope);
-      log.info("[AI Client] InternalMessage 전송 완료: {}", envelope.getMessageId());
-    } catch (StatusRuntimeException e) {
-      throw mapToAiServerException(e);
-    }
+    executeVoid(
+        "publishInternalMessage", () -> stubWithDeadline().publishInternalMessage(envelope));
+    log.info("[AI Client] InternalMessage 전송 완료: {}", envelope.getMessageId());
   }
 
   public void publishAgentReport(AgentReportEnvelope envelope) {
-    try {
-      stubWithDeadline().publishAgentReport(envelope);
-      log.info("[AI Client] AgentReport 전송 완료: {}", envelope.getReportId());
-    } catch (StatusRuntimeException e) {
-      throw mapToAiServerException(e);
-    }
+    executeVoid("publishAgentReport", () -> stubWithDeadline().publishAgentReport(envelope));
+    log.info("[AI Client] AgentReport 전송 완료: {}", envelope.getReportId());
   }
 
   public GetRecommendationsResponse getRecommendations(
@@ -193,25 +226,24 @@ public class AiServerClient {
       throw new AiServerException(AiServerErrorCode.AI400_01);
     }
 
-    try {
-      GetRecommendationsRequest.Builder request =
-          GetRecommendationsRequest.newBuilder()
-              .setRequestId(UUID.randomUUID().toString())
-              .setBundleId(bundleId != null ? bundleId : "")
-              .setIncludeDiagnostics(includeDiagnostics);
-      if (topK != null) {
-        request.setTopK(topK);
-      }
-      GetRecommendationsResponse response =
-          stubWithDeadline(recommendationsTimeout).getRecommendations(request.build());
-      log.info(
-          "[AI Client] 추천 조회 완료: status={}, count={}",
-          response.getStatus(),
-          response.getRecommendationsCount());
-      return response;
-    } catch (StatusRuntimeException e) {
-      throw mapToAiServerException(e);
+    GetRecommendationsRequest.Builder request =
+        GetRecommendationsRequest.newBuilder()
+            .setRequestId(UUID.randomUUID().toString())
+            .setBundleId(bundleId != null ? bundleId : "")
+            .setIncludeDiagnostics(includeDiagnostics);
+    if (topK != null) {
+      request.setTopK(topK);
     }
+    GetRecommendationsResponse response =
+        execute(
+            "getRecommendations",
+            recommendationsTimeout,
+            () -> stubWithDeadline(recommendationsTimeout).getRecommendations(request.build()));
+    log.info(
+        "[AI Client] 추천 조회 완료: status={}, count={}",
+        response.getStatus(),
+        response.getRecommendationsCount());
+    return response;
   }
 
   public StartPaperAutoTradingResponse startPaperAutoTrading(
@@ -221,46 +253,43 @@ public class AiServerClient {
       Integer intervalSec,
       List<String> tickers,
       String confirmPhrase) {
-    try {
-      StartPaperAutoTradingRequest.Builder builder =
-          StartPaperAutoTradingRequest.newBuilder()
-              .setRequestId(requestId)
-              .setBundleId(bundleId != null ? bundleId : "")
-              .addAllTickers(safeTickers(tickers))
-              .setConfirmPhrase(confirmPhrase != null ? confirmPhrase : "");
-      if (cycles != null) {
-        builder.setCycles(cycles);
-      }
-      if (intervalSec != null) {
-        builder.setIntervalSec(intervalSec);
-      }
-      return stubWithDeadline(paperStartTimeout).startPaperAutoTrading(builder.build());
-    } catch (StatusRuntimeException e) {
-      throw mapToAiServerException(e);
+    StartPaperAutoTradingRequest.Builder builder =
+        StartPaperAutoTradingRequest.newBuilder()
+            .setRequestId(requestId)
+            .setBundleId(bundleId != null ? bundleId : "")
+            .addAllTickers(safeTickers(tickers))
+            .setConfirmPhrase(confirmPhrase != null ? confirmPhrase : "");
+    if (cycles != null) {
+      builder.setCycles(cycles);
     }
+    if (intervalSec != null) {
+      builder.setIntervalSec(intervalSec);
+    }
+    return execute(
+        "startPaperAutoTrading",
+        paperStartTimeout,
+        () -> stubWithDeadline(paperStartTimeout).startPaperAutoTrading(builder.build()));
   }
 
   public StopPaperAutoTradingResponse stopPaperAutoTrading(String requestId, String aiSessionId) {
-    try {
-      StopPaperAutoTradingRequest request =
-          StopPaperAutoTradingRequest.newBuilder()
-              .setRequestId(requestId)
-              .setSessionId(aiSessionId != null ? aiSessionId : "")
-              .build();
-      return stubWithDeadline(paperStopTimeout).stopPaperAutoTrading(request);
-    } catch (StatusRuntimeException e) {
-      throw mapToAiServerException(e);
-    }
+    StopPaperAutoTradingRequest request =
+        StopPaperAutoTradingRequest.newBuilder()
+            .setRequestId(requestId)
+            .setSessionId(aiSessionId != null ? aiSessionId : "")
+            .build();
+    return execute(
+        "stopPaperAutoTrading",
+        paperStopTimeout,
+        () -> stubWithDeadline(paperStopTimeout).stopPaperAutoTrading(request));
   }
 
   public PaperAutoTradingStatusResponse getPaperAutoTradingStatus(String requestId) {
-    try {
-      GetPaperAutoTradingStatusRequest request =
-          GetPaperAutoTradingStatusRequest.newBuilder().setRequestId(requestId).build();
-      return stubWithDeadline(paperStatusTimeout).getPaperAutoTradingStatus(request);
-    } catch (StatusRuntimeException e) {
-      throw mapToAiServerException(e);
-    }
+    GetPaperAutoTradingStatusRequest request =
+        GetPaperAutoTradingStatusRequest.newBuilder().setRequestId(requestId).build();
+    return execute(
+        "getPaperAutoTradingStatus",
+        paperStatusTimeout,
+        () -> stubWithDeadline(paperStatusTimeout).getPaperAutoTradingStatus(request));
   }
 
   private static List<String> safeTickers(List<String> tickers) {
