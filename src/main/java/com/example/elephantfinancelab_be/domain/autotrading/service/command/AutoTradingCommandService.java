@@ -8,7 +8,12 @@ public interface AutoTradingCommandService {
   AutoTradingResDTO.Session startSession(
       Long userId, String idempotencyKey, AutoTradingReqDTO.StartSession request);
 
-  AutoTradingResDTO.Session stopSession(Long userId, String sessionId);
+  AutoTradingResDTO.Session startActiveUniverseSession(
+      Long userId,
+      String idempotencyKey,
+      Integer purchaseOptionId,
+      Integer cycles,
+      Integer intervalSec);
 
-  AutoTradingResDTO.Readiness getReadiness();
+  AutoTradingResDTO.Session stopSession(Long userId, String sessionId);
 }

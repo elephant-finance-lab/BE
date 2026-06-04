@@ -69,6 +69,8 @@ public class AutoTradingResDTO {
     private boolean safeToShowDashboard;
     private boolean safeToEnableOrderActions;
     private boolean safeToEnableLiveActions;
+    private boolean activeSessionExists;
+    private boolean activeSessionOwnedByCurrentUser;
     private boolean canStartPaperAutoTrading;
     private String blockedReason;
     private String detailsJson;

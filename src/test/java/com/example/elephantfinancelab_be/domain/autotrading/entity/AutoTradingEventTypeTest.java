@@ -14,6 +14,8 @@ class AutoTradingEventTypeTest {
     try {
       assertThat(AutoTradingEventType.from("decision_completed"))
           .isEqualTo(AutoTradingEventType.DECISION_COMPLETED);
+      assertThat(AutoTradingEventType.from("scheduler_audit"))
+          .isEqualTo(AutoTradingEventType.SCHEDULER_AUDIT);
     } finally {
       Locale.setDefault(previous);
     }

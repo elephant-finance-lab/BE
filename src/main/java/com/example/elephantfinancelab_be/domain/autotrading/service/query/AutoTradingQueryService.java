@@ -9,4 +9,6 @@ public interface AutoTradingQueryService {
   AutoTradingResDTO.Session findSession(Long userId, String sessionId);
 
   AutoTradingResDTO.AiStatus findAiStatus(Long userId, String sessionId);
+
+  AutoTradingResDTO.Readiness findReadiness(Long userId, String requestedBundleId);
 }

@@ -10,6 +10,7 @@ public enum AutoTradingEventType {
   PAPER_ORDER_FAILED,
   AUTO_TRADING_STOPPED,
   AUTO_TRADING_FAILED,
+  SCHEDULER_AUDIT,
   UNKNOWN;
 
   public static AutoTradingEventType from(String value) {
