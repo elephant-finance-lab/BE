@@ -1,11 +1,14 @@
+server:
+  forward-headers-strategy: framework
+
 app:
   cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:https://elephantfinancelab.site,https://www.elephantfinancelab.site,https://elephantfinancelab.vercel.app}
   oauth2:
-    success-redirect-uri: ${OAUTH2_SUCCESS_REDIRECT_URI:http://localhost:5173/auth/callback}
-    failure-redirect-uri: ${OAUTH2_FAILURE_REDIRECT_URI:http://localhost:5173/login}
+    success-redirect-uri: ${OAUTH2_SUCCESS_REDIRECT_URI:https://www.elephantfinancelab.site/auth/callback}
+    failure-redirect-uri: ${OAUTH2_FAILURE_REDIRECT_URI:https://www.elephantfinancelab.site/login}
   auth:
-    refresh-cookie-secure: ${REFRESH_COOKIE_SECURE:false}
+    refresh-cookie-secure: ${REFRESH_COOKIE_SECURE:true}
 
 spring:
   datasource:
