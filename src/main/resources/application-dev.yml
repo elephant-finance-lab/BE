@@ -1,16 +1,14 @@
-app:
-  cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:https://elephantfinancelab.site,https://www.elephantfinancelab.site}
-  oauth2:
-    success-redirect-uri: ${OAUTH2_SUCCESS_REDIRECT_URI:https://elephantfinancelab.vercel.app/auth/callback}
-    failure-redirect-uri: ${OAUTH2_FAILURE_REDIRECT_URI:https://elephantfinancelab.vercel.app/login}
-    logout-redirect-uri: ${OAUTH2_LOGOUT_REDIRECT_URI:https://elephantfinancelab.vercel.app/login}
-  auth:
-    refresh-cookie-secure: ${REFRESH_COOKIE_SECURE:true}
-    refresh-cookie-same-site: ${REFRESH_COOKIE_SAME_SITE:None}
-
 server:
   forward-headers-strategy: framework
+
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:https://elephantfinancelab.site,https://www.elephantfinancelab.site,https://elephantfinancelab.vercel.app}
+  oauth2:
+    success-redirect-uri: ${OAUTH2_SUCCESS_REDIRECT_URI:https://www.elephantfinancelab.site/auth/callback}
+    failure-redirect-uri: ${OAUTH2_FAILURE_REDIRECT_URI:https://www.elephantfinancelab.site/login}
+  auth:
+    refresh-cookie-secure: ${REFRESH_COOKIE_SECURE:true}
 
 spring:
   datasource:
