@@ -54,13 +54,3 @@ jobs:
           KIS_FINANCIAL_APP_SECRET: ${{ secrets.KIS_FINANCIAL_APP_SECRET }}
           KIS_BASE_URL: ${{ secrets.KIS_BASE_URL }}
           KIS_WS_URL: ${{ secrets.KIS_WS_URL }}
-
-  # 배포 Job (Push일 때만 실행 = 머지 되었을 때)
-  deploy:
-    needs: build-and-test # Lint + 컴파일 + 테스트 통과해야만 실행됨
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Ready for deploy
-        run: echo "여기에 배포 스크립트를 작성합니다 (SSH 접속, Docker 빌드 등)"
-        # 실제 배포 로직은 서버 환경(AWS EC2, Docker 등)에 따라 추가해야 합니다.

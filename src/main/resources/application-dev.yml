@@ -2,10 +2,15 @@ app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:https://elephantfinancelab.site,https://www.elephantfinancelab.site}
   oauth2:
-    success-redirect-uri: ${OAUTH2_SUCCESS_REDIRECT_URI:http://localhost:5173/auth/callback}
-    failure-redirect-uri: ${OAUTH2_FAILURE_REDIRECT_URI:http://localhost:5173/login}
+    success-redirect-uri: ${OAUTH2_SUCCESS_REDIRECT_URI:https://elephantfinancelab.vercel.app/auth/callback}
+    failure-redirect-uri: ${OAUTH2_FAILURE_REDIRECT_URI:https://elephantfinancelab.vercel.app/login}
+    logout-redirect-uri: ${OAUTH2_LOGOUT_REDIRECT_URI:https://elephantfinancelab.vercel.app/login}
   auth:
-    refresh-cookie-secure: ${REFRESH_COOKIE_SECURE:false}
+    refresh-cookie-secure: ${REFRESH_COOKIE_SECURE:true}
+    refresh-cookie-same-site: ${REFRESH_COOKIE_SAME_SITE:None}
+
+server:
+  forward-headers-strategy: framework
 
 spring:
   datasource:
@@ -17,7 +22,7 @@ spring:
   jpa:
     show-sql: false
     hibernate:
-      ddl-auto: update
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:validate}
     properties:
       hibernate:
         format_sql: true
@@ -81,8 +86,14 @@ recommendation:
 
 logging:
   level:
-    org.springframework.security: DEBUG
-    com.example: DEBUG
+    org.springframework.security: WARN
+    com.example: INFO
+
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_API_DOCS_ENABLED:false}
+  swagger-ui:
+    enabled: ${SPRINGDOC_SWAGGER_UI_ENABLED:false}
 
 ai:
   server:

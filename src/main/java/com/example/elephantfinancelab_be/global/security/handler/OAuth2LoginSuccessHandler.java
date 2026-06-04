@@ -33,6 +33,9 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
   @Value("${app.auth.refresh-cookie-secure:false}")
   private boolean refreshCookieSecure;
 
+  @Value("${app.auth.refresh-cookie-same-site:Strict}")
+  private String refreshCookieSameSite = "Strict";
+
   private String resolveRegistrationId(Authentication authentication) {
     if (authentication instanceof OAuth2AuthenticationToken token) {
       return token.getAuthorizedClientRegistrationId();
@@ -73,7 +76,7 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
             .secure(refreshCookieSecure)
             .path("/api/auth/token")
             .maxAge(Duration.ofDays(14))
-            .sameSite("Strict")
+            .sameSite(refreshCookieSameSite)
             .build();
 
     response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
