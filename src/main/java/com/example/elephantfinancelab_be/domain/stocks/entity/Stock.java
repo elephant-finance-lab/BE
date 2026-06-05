@@ -34,6 +34,13 @@ public class Stock extends BaseEntity {
   @Column(name = "name", nullable = false, length = 100)
   private String name;
 
+  public void updateName(String name) {
+    if (name == null || name.isBlank()) {
+      throw new IllegalArgumentException("name must not be blank");
+    }
+    this.name = name.trim();
+  }
+
   @PrePersist
   @PreUpdate
   private void normalizeTicker() {

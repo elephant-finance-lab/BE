@@ -52,7 +52,8 @@ public class KisStockPriceClient {
     JsonNode output = fetchCurrentPriceOutput(stock);
     String signCode = textValue(output, "prdy_vrss_sign");
     return StockConverter.toSummary(
-        stock,
+        resolvedStockName(stock, output),
+        stock.getTicker(),
         positiveLongValue(output, "stck_prpr"),
         signedLongValue(output, "prdy_vrss", signCode),
         signedDecimalValue(output, "prdy_ctrt", signCode),
@@ -143,7 +144,12 @@ public class KisStockPriceClient {
 
   private String textValue(JsonNode node, String fieldName) {
     String value = node.path(fieldName).asText();
-    return value.isBlank() ? null : value;
+    return value.isBlank() ? null : value.trim();
+  }
+
+  private String resolvedStockName(Stock stock, JsonNode output) {
+    String stockName = textValue(output, "hts_kor_isnm");
+    return stockName == null ? stock.getName() : stockName;
   }
 
   private Long positiveLongValue(JsonNode node, String fieldName) {
