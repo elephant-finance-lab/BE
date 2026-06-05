@@ -49,7 +49,8 @@ class StockQueryServiceImplTest {
 
     assertThat(result).isSameAs(cached);
     verify(kisStockPriceClient, never()).fetchSummary(stock);
-    verify(stockRegistrationService).updateNameIfTickerEcho("005930", "삼성전자");
+    verify(stockRegistrationService, never())
+        .updateNameIfTickerEcho(org.mockito.Mockito.any(), org.mockito.Mockito.any());
     verify(kisStockPriceWebSocketClient).subscribe("005930");
   }
 

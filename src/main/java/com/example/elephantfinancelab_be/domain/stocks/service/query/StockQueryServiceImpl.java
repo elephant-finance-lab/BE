@@ -13,12 +13,10 @@ import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
 public class StockQueryServiceImpl implements StockQueryService {
 
   private static final int SUMMARY_FETCH_ATTEMPTS = 3;
@@ -34,7 +32,6 @@ public class StockQueryServiceImpl implements StockQueryService {
     String normalizedTicker = normalizeTicker(ticker);
     StockResDTO.Summary cachedSummary = findCachedSummary(normalizedTicker);
     if (cachedSummary != null) {
-      refreshRegisteredStockName(cachedSummary);
       kisStockPriceWebSocketClient.subscribe(normalizedTicker);
       log.info("종목 요약 캐시 조회 성공. ticker={}", normalizedTicker);
       return cachedSummary;
