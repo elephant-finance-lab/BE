@@ -17,9 +17,27 @@ public class StockConverter {
       BigDecimal changeRate,
       String signCode,
       LocalDateTime updatedAt) {
+    return toSummary(
+        stock.getName(),
+        stock.getTicker(),
+        currentPriceKrw,
+        changeAmountKrw,
+        changeRate,
+        signCode,
+        updatedAt);
+  }
+
+  public static StockResDTO.Summary toSummary(
+      String stockName,
+      String ticker,
+      Long currentPriceKrw,
+      Long changeAmountKrw,
+      BigDecimal changeRate,
+      String signCode,
+      LocalDateTime updatedAt) {
     return StockResDTO.Summary.builder()
-        .stockName(stock.getName())
-        .ticker(stock.getTicker())
+        .stockName(stockName)
+        .ticker(ticker)
         .currentPriceKrw(currentPriceKrw)
         .changeAmountKrw(changeAmountKrw)
         .changeRate(changeRate)
