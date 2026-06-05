@@ -35,7 +35,7 @@ public class AutoTradingController {
   private final AutoTradingQueryService autoTradingQueryService;
   private final UserRepository userRepository;
 
-  @Operation(summary = "자동매매 세션 시작", description = "선택한 추천 종목으로 AI 모의 자동매매를 시작합니다.")
+  @Operation(summary = "자동매매 세션 시작", description = "요청 추천 종목 또는 최신 추천 전체로 AI 모의 자동매매를 시작합니다.")
   @PostMapping
   public ResponseEntity<ApiResponse<AutoTradingResDTO.Session>> startSession(
       @AuthenticationPrincipal String email,

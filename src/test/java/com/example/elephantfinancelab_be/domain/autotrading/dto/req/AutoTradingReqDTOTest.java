@@ -24,6 +24,14 @@ class AutoTradingReqDTOTest {
         .contains("cycles", "intervalSec");
   }
 
+  @Test
+  void startSessionAllowsEmptyRecommendationIdsForLatestRecommendations() {
+    AutoTradingReqDTO.StartSession request = request(3, 60);
+    ReflectionTestUtils.setField(request, "recommendationIds", java.util.List.of());
+
+    assertThat(validator.validate(request)).isEmpty();
+  }
+
   private static AutoTradingReqDTO.StartSession request(Integer cycles, Integer intervalSec) {
     AutoTradingReqDTO.StartSession request = new AutoTradingReqDTO.StartSession();
     ReflectionTestUtils.setField(request, "recommendationIds", java.util.List.of(1L));

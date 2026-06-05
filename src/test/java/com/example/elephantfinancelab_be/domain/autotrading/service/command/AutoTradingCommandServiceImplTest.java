@@ -25,8 +25,7 @@ import com.example.elephantfinancelab_be.domain.autotrading.exception.AutoTradin
 import com.example.elephantfinancelab_be.domain.autotrading.exception.code.AutoTradingErrorCode;
 import com.example.elephantfinancelab_be.domain.autotrading.repository.AutoTradingSessionRepository;
 import com.example.elephantfinancelab_be.domain.recommendation.entity.Recommendation;
-import com.example.elephantfinancelab_be.domain.recommendation.entity.UserSelectedRecommendation;
-import com.example.elephantfinancelab_be.domain.recommendation.repository.UserSelectedRecommendationRepository;
+import com.example.elephantfinancelab_be.domain.recommendation.repository.RecommendationRepository;
 import com.example.elephantfinancelab_be.global.apiPayload.code.AiServerErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.AiServerException;
 import com.example.elephantfinancelab_be.global.config.AiServerClient;
@@ -45,11 +44,12 @@ class AutoTradingCommandServiceImplTest {
 
   private final AutoTradingSessionRepository sessionRepository =
       mock(AutoTradingSessionRepository.class);
-  private final UserSelectedRecommendationRepository selectedRepository =
-      mock(UserSelectedRecommendationRepository.class);
+  private final RecommendationRepository recommendationRepository =
+      mock(RecommendationRepository.class);
   private final AiServerClient aiServerClient = mock(AiServerClient.class);
   private final AutoTradingCommandServiceImpl service =
-      new AutoTradingCommandServiceImpl(sessionRepository, selectedRepository, aiServerClient);
+      new AutoTradingCommandServiceImpl(
+          sessionRepository, recommendationRepository, aiServerClient);
 
   @BeforeEach
   void setUp() {
@@ -68,7 +68,7 @@ class AutoTradingCommandServiceImplTest {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
-    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+    when(recommendationRepository.findAllById(List.of(1L)))
         .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
     when(aiServerClient.startPaperAutoTrading(
@@ -91,6 +91,41 @@ class AutoTradingCommandServiceImplTest {
   }
 
   @Test
+  void startsPaperAutoSessionWithLatestRecommendationsWhenRequestHasNoIds() {
+    OffsetDateTime latestGeneratedAt = OffsetDateTime.parse("2026-06-01T10:00:00+09:00");
+    Recommendation samsung = selectedRecommendation(1L, "005930", "BUNDLE-TEST");
+    Recommendation hynix = selectedRecommendation(2L, "000660", "BUNDLE-TEST");
+    when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-all"))
+        .thenReturn(Optional.empty());
+    when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
+    when(recommendationRepository.findByModelGeneratedAtIsNotNull())
+        .thenReturn(List.of(samsung, hynix));
+    when(recommendationRepository.findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            latestGeneratedAt, "BUNDLE-TEST"))
+        .thenReturn(List.of(samsung, hynix));
+    when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
+    when(aiServerClient.startPaperAutoTrading(
+            anyString(), anyString(), any(), any(), any(), anyString()))
+        .thenReturn(
+            StartPaperAutoTradingResponse.newBuilder()
+                .setAccepted(true)
+                .setStatus("STARTED")
+                .setSessionId("ai-session-all")
+                .build());
+
+    AutoTradingResDTO.Session result =
+        service.startSession(1L, "idempotency-all", request(List.of()));
+
+    assertThat(result.getRecommendationIds()).containsExactly(1L, 2L);
+    assertThat(result.getSelectedTickers()).containsExactly("005930", "000660");
+    ArgumentCaptor<List<String>> tickersCaptor = ArgumentCaptor.forClass(List.class);
+    verify(aiServerClient)
+        .startPaperAutoTrading(
+            anyString(), anyString(), any(), any(), tickersCaptor.capture(), anyString());
+    assertThat(tickersCaptor.getValue()).containsExactly("005930", "000660");
+  }
+
+  @Test
   void rejectsSubMinutePaperAutoIntervalBeforeAiCall() {
     AutoTradingReqDTO.StartSession request = request();
     ReflectionTestUtils.setField(request, "intervalSec", 10);
@@ -99,7 +134,7 @@ class AutoTradingCommandServiceImplTest {
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("intervalSec must be at least 60");
 
-    verifyNoInteractions(selectedRepository, aiServerClient);
+    verifyNoInteractions(recommendationRepository, aiServerClient);
   }
 
   @Test
@@ -107,7 +142,7 @@ class AutoTradingCommandServiceImplTest {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-ai-default-null"))
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
-    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+    when(recommendationRepository.findAllById(List.of(1L)))
         .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
     when(aiServerClient.startPaperAutoTrading(
@@ -136,7 +171,7 @@ class AutoTradingCommandServiceImplTest {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-ai-default-zero"))
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
-    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+    when(recommendationRepository.findAllById(List.of(1L)))
         .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
     when(aiServerClient.startPaperAutoTrading(
@@ -164,7 +199,7 @@ class AutoTradingCommandServiceImplTest {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
-    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+    when(recommendationRepository.findAllById(List.of(1L)))
         .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-FE")));
     when(aiServerClient.getServiceReadiness("BUNDLE-FE")).thenReturn(paperReady());
     when(aiServerClient.startPaperAutoTrading(
@@ -215,7 +250,7 @@ class AutoTradingCommandServiceImplTest {
     assertThat(result.getAiSessionId()).isEqualTo("ai-session-active-universe");
     assertThat(result.getSelectedTickers()).isEmpty();
     assertThat(result.getRecommendationIds()).isEmpty();
-    verifyNoInteractions(selectedRepository);
+    verifyNoInteractions(recommendationRepository);
     ArgumentCaptor<List<String>> tickersCaptor = ArgumentCaptor.forClass(List.class);
     verify(aiServerClient)
         .startPaperAutoTrading(
@@ -250,7 +285,7 @@ class AutoTradingCommandServiceImplTest {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
-    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+    when(recommendationRepository.findAllById(List.of(1L)))
         .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
     when(aiServerClient.startPaperAutoTrading(
@@ -284,7 +319,7 @@ class AutoTradingCommandServiceImplTest {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
-    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+    when(recommendationRepository.findAllById(List.of(1L)))
         .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
     when(aiServerClient.startPaperAutoTrading(
@@ -310,7 +345,7 @@ class AutoTradingCommandServiceImplTest {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
-    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+    when(recommendationRepository.findAllById(List.of(1L)))
         .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST"))
         .thenThrow(
@@ -336,7 +371,7 @@ class AutoTradingCommandServiceImplTest {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
-    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+    when(recommendationRepository.findAllById(List.of(1L)))
         .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST"))
         .thenReturn(
@@ -371,7 +406,7 @@ class AutoTradingCommandServiceImplTest {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
-    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+    when(recommendationRepository.findAllById(List.of(1L)))
         .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST"))
         .thenReturn(
@@ -403,7 +438,7 @@ class AutoTradingCommandServiceImplTest {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
-    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+    when(recommendationRepository.findAllById(List.of(1L)))
         .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
     when(aiServerClient.startPaperAutoTrading(
@@ -433,7 +468,7 @@ class AutoTradingCommandServiceImplTest {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
-    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+    when(recommendationRepository.findAllById(List.of(1L)))
         .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
     when(aiServerClient.startPaperAutoTrading(
@@ -473,7 +508,7 @@ class AutoTradingCommandServiceImplTest {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
-    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+    when(recommendationRepository.findAllById(List.of(1L)))
         .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST")).thenReturn(paperReady());
     when(aiServerClient.startPaperAutoTrading(
@@ -502,7 +537,7 @@ class AutoTradingCommandServiceImplTest {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
-    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+    when(recommendationRepository.findAllById(List.of(1L)))
         .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST"))
         .thenReturn(
@@ -537,7 +572,7 @@ class AutoTradingCommandServiceImplTest {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
     when(sessionRepository.existsByActiveSlot(anyString())).thenReturn(false);
-    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+    when(recommendationRepository.findAllById(List.of(1L)))
         .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-TEST")));
     when(aiServerClient.getServiceReadiness("BUNDLE-TEST"))
         .thenReturn(
@@ -563,7 +598,7 @@ class AutoTradingCommandServiceImplTest {
   void rejectsStartWhenAnySelectedRecommendationHasBlankTicker() {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
-    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L, 2L)))
+    when(recommendationRepository.findAllById(List.of(1L, 2L)))
         .thenReturn(
             List.of(
                 selectedRecommendation(1L, "005930", "BUNDLE-TEST"),
@@ -584,7 +619,7 @@ class AutoTradingCommandServiceImplTest {
   void rejectsStartWhenRequestedBundleDoesNotMatchSelectedRecommendationBundle() {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
-    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+    when(recommendationRepository.findAllById(List.of(1L)))
         .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-OLD")));
 
     assertThatThrownBy(
@@ -606,7 +641,7 @@ class AutoTradingCommandServiceImplTest {
   void rejectsStartWhenBlankRequestedBundleFallsBackAndSelectedRecommendationBundleDiffers() {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
-    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+    when(recommendationRepository.findAllById(List.of(1L)))
         .thenReturn(List.of(selectedRecommendation(1L, "005930", "BUNDLE-OLD")));
 
     assertThatThrownBy(() -> service.startSession(1L, "idempotency-1", request()))
@@ -627,7 +662,7 @@ class AutoTradingCommandServiceImplTest {
   void rejectsStartWhenSelectedRecommendationBundleIsMissing() {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
-    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+    when(recommendationRepository.findAllById(List.of(1L)))
         .thenReturn(List.of(selectedRecommendation(1L, "005930", null)));
 
     assertThatThrownBy(() -> service.startSession(1L, "idempotency-1", request()))
@@ -643,7 +678,7 @@ class AutoTradingCommandServiceImplTest {
   void rejectsStartWhenSelectedRecommendationGeneratedAtIsMissing() {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
-    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+    when(recommendationRepository.findAllById(List.of(1L)))
         .thenReturn(
             List.of(selectedRecommendationWithGeneratedAt(1L, "005930", "BUNDLE-TEST", null)));
 
@@ -665,7 +700,7 @@ class AutoTradingCommandServiceImplTest {
   void rejectsStartWhenSelectedRecommendationIsStale() {
     when(sessionRepository.findByUserIdAndIdempotencyKey(1L, "idempotency-1"))
         .thenReturn(Optional.empty());
-    when(selectedRepository.findAllByUserIdAndRecommendation_IdIn(1L, List.of(1L)))
+    when(recommendationRepository.findAllById(List.of(1L)))
         .thenReturn(
             List.of(
                 selectedRecommendationWithGeneratedAt(
@@ -730,16 +765,15 @@ class AutoTradingCommandServiceImplTest {
     return request;
   }
 
-  private static UserSelectedRecommendation selectedRecommendation(Long id, String ticker) {
+  private static Recommendation selectedRecommendation(Long id, String ticker) {
     return selectedRecommendation(id, ticker, null);
   }
 
-  private static UserSelectedRecommendation selectedRecommendation(
-      Long id, String ticker, String bundleId) {
+  private static Recommendation selectedRecommendation(Long id, String ticker, String bundleId) {
     return selectedRecommendationWithGeneratedAt(id, ticker, bundleId, "2026-06-01T10:00:00+09:00");
   }
 
-  private static UserSelectedRecommendation selectedRecommendationWithGeneratedAt(
+  private static Recommendation selectedRecommendationWithGeneratedAt(
       Long id, String ticker, String bundleId, String generatedAt) {
     Recommendation recommendation =
         Recommendation.builder()
@@ -748,7 +782,7 @@ class AutoTradingCommandServiceImplTest {
             .modelBundleId(bundleId)
             .modelGeneratedAt(generatedAt == null ? null : OffsetDateTime.parse(generatedAt))
             .build();
-    return UserSelectedRecommendation.builder().userId(1L).recommendation(recommendation).build();
+    return recommendation;
   }
 
   private static ServiceReadinessResponse paperReady() {
