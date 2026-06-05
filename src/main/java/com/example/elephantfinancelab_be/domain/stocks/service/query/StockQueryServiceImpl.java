@@ -6,6 +6,7 @@ import com.example.elephantfinancelab_be.domain.stocks.exception.StockException;
 import com.example.elephantfinancelab_be.domain.stocks.exception.code.StockErrorCode;
 import com.example.elephantfinancelab_be.domain.stocks.service.KisStockPriceClient;
 import com.example.elephantfinancelab_be.domain.stocks.service.KisStockPriceWebSocketClient;
+import com.example.elephantfinancelab_be.domain.stocks.service.StockRegistrationService;
 import com.example.elephantfinancelab_be.domain.stocks.service.StockResolverService;
 import com.example.elephantfinancelab_be.domain.stocks.service.StockSummaryRedisService;
 import java.util.Locale;
@@ -23,6 +24,7 @@ public class StockQueryServiceImpl implements StockQueryService {
   private static final int SUMMARY_FETCH_ATTEMPTS = 3;
 
   private final StockResolverService stockResolverService;
+  private final StockRegistrationService stockRegistrationService;
   private final StockSummaryRedisService stockSummaryRedisService;
   private final KisStockPriceClient kisStockPriceClient;
   private final KisStockPriceWebSocketClient kisStockPriceWebSocketClient;
@@ -32,6 +34,7 @@ public class StockQueryServiceImpl implements StockQueryService {
     String normalizedTicker = normalizeTicker(ticker);
     StockResDTO.Summary cachedSummary = findCachedSummary(normalizedTicker);
     if (cachedSummary != null) {
+      refreshRegisteredStockName(cachedSummary);
       kisStockPriceWebSocketClient.subscribe(normalizedTicker);
       log.info("종목 요약 캐시 조회 성공. ticker={}", normalizedTicker);
       return cachedSummary;
@@ -39,6 +42,7 @@ public class StockQueryServiceImpl implements StockQueryService {
 
     Stock stock = stockResolverService.resolve(normalizedTicker);
     StockResDTO.Summary summary = fetchSummaryWithRetry(stock);
+    refreshRegisteredStockName(summary);
     saveSummaryCache(summary);
     kisStockPriceWebSocketClient.subscribe(stock.getTicker());
     return summary;
@@ -71,7 +75,12 @@ public class StockQueryServiceImpl implements StockQueryService {
 
   private StockResDTO.Summary findCachedSummary(String ticker) {
     try {
-      return stockSummaryRedisService.find(ticker);
+      StockResDTO.Summary cachedSummary = stockSummaryRedisService.find(ticker);
+      if (cachedSummary != null && isTickerEcho(cachedSummary.getStockName(), ticker)) {
+        log.info("종목 요약 캐시의 종목명이 ticker와 같아 재조회합니다. ticker={}", ticker);
+        return null;
+      }
+      return cachedSummary;
     } catch (RuntimeException e) {
       log.warn(
           "code={}, message={}, ticker={}",
@@ -80,6 +89,18 @@ public class StockQueryServiceImpl implements StockQueryService {
           ticker,
           e);
       return null;
+    }
+  }
+
+  private boolean isTickerEcho(String stockName, String ticker) {
+    return stockName != null && stockName.trim().equalsIgnoreCase(ticker);
+  }
+
+  private void refreshRegisteredStockName(StockResDTO.Summary summary) {
+    try {
+      stockRegistrationService.updateNameIfTickerEcho(summary.getTicker(), summary.getStockName());
+    } catch (RuntimeException e) {
+      log.warn("종목명 DB 갱신 실패를 무시합니다. ticker={}", summary.getTicker(), e);
     }
   }
 

@@ -14,6 +14,7 @@ import com.example.elephantfinancelab_be.domain.stocks.exception.StockException;
 import com.example.elephantfinancelab_be.domain.stocks.exception.code.StockErrorCode;
 import com.example.elephantfinancelab_be.domain.stocks.service.KisStockPriceClient;
 import com.example.elephantfinancelab_be.domain.stocks.service.KisStockPriceWebSocketClient;
+import com.example.elephantfinancelab_be.domain.stocks.service.StockRegistrationService;
 import com.example.elephantfinancelab_be.domain.stocks.service.StockResolverService;
 import com.example.elephantfinancelab_be.domain.stocks.service.StockSummaryRedisService;
 import java.math.BigDecimal;
@@ -24,6 +25,8 @@ class StockQueryServiceImplTest {
 
   private final Stock stock = Stock.builder().ticker("005930").name("삼성전자").build();
   private final StockResolverService stockResolverService = mock(StockResolverService.class);
+  private final StockRegistrationService stockRegistrationService =
+      mock(StockRegistrationService.class);
   private final StockSummaryRedisService stockSummaryRedisService =
       mock(StockSummaryRedisService.class);
   private final KisStockPriceClient kisStockPriceClient = mock(KisStockPriceClient.class);
@@ -32,6 +35,7 @@ class StockQueryServiceImplTest {
   private final StockQueryServiceImpl service =
       new StockQueryServiceImpl(
           stockResolverService,
+          stockRegistrationService,
           stockSummaryRedisService,
           kisStockPriceClient,
           kisStockPriceWebSocketClient);
@@ -45,6 +49,24 @@ class StockQueryServiceImplTest {
 
     assertThat(result).isSameAs(cached);
     verify(kisStockPriceClient, never()).fetchSummary(stock);
+    verify(stockRegistrationService).updateNameIfTickerEcho("005930", "삼성전자");
+    verify(kisStockPriceWebSocketClient).subscribe("005930");
+  }
+
+  @Test
+  void refreshesCachedSummaryWhenStockNameEchoesTicker() {
+    StockResDTO.Summary cached = summary("005930", 72000L);
+    StockResDTO.Summary fetched = summary("삼성전자", 72500L);
+    when(stockSummaryRedisService.find("005930")).thenReturn(cached);
+    when(stockResolverService.resolve("005930")).thenReturn(stock);
+    when(kisStockPriceClient.fetchSummary(stock)).thenReturn(fetched);
+
+    StockResDTO.Summary result = service.getSummary("005930");
+
+    assertThat(result).isSameAs(fetched);
+    verify(kisStockPriceClient, times(1)).fetchSummary(stock);
+    verify(stockRegistrationService).updateNameIfTickerEcho("005930", "삼성전자");
+    verify(stockSummaryRedisService).save(fetched);
     verify(kisStockPriceWebSocketClient).subscribe("005930");
   }
 
@@ -130,8 +152,12 @@ class StockQueryServiceImplTest {
   }
 
   private StockResDTO.Summary summary(long price) {
+    return summary("삼성전자", price);
+  }
+
+  private StockResDTO.Summary summary(String stockName, long price) {
     return StockResDTO.Summary.builder()
-        .stockName("삼성전자")
+        .stockName(stockName)
         .ticker("005930")
         .currentPriceKrw(price)
         .changeAmountKrw(100L)
