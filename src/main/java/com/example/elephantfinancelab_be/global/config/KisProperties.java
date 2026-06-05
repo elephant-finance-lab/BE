@@ -98,11 +98,6 @@ public class KisProperties {
   void validateOfficialEndpointMatchesMode() {
     validateModeEndpoint("base-url", getBaseUrl(), mode.baseUrl(), mode.other().baseUrl());
     validateModeEndpoint(
-        "financial-base-url",
-        getFinancialBaseUrlOrDefault(),
-        mode.baseUrl(),
-        mode.other().baseUrl());
-    validateModeEndpoint(
         "websocket-url", getWebsocketUrl(), mode.websocketUrl(), mode.other().websocketUrl());
   }
 

@@ -77,48 +77,66 @@ public class KisStockPriceClient {
 
   private JsonNode fetchCurrentPriceOutput(Stock stock) {
     try {
-      HttpRequest request =
-          HttpRequest.newBuilder()
-              .uri(currentPriceUri(stock.getTicker()))
-              .timeout(REQUEST_TIMEOUT)
-              .header("content-type", MediaType.APPLICATION_JSON_VALUE + "; charset=utf-8")
-              .header("authorization", "Bearer " + accessTokenClient.getAccessToken())
-              .header("appkey", kisProperties.getAppKey())
-              .header("appsecret", kisProperties.getAppSecret())
-              .header("tr_id", CURRENT_PRICE_TR_ID)
-              .header("custtype", "P")
-              .GET()
-              .build();
+      for (int attempt = 0; attempt < 2; attempt++) {
+        HttpRequest request =
+            HttpRequest.newBuilder()
+                .uri(currentPriceUri(stock.getTicker()))
+                .timeout(REQUEST_TIMEOUT)
+                .header("content-type", MediaType.APPLICATION_JSON_VALUE + "; charset=utf-8")
+                .header(
+                    "authorization",
+                    "Bearer "
+                        + accessTokenClient.getAccessToken(
+                            kisProperties.getFinancialAppKeyOrDefault(),
+                            kisProperties.getFinancialAppSecretOrDefault(),
+                            kisProperties.getFinancialBaseUrlOrDefault()))
+                .header("appkey", kisProperties.getFinancialAppKeyOrDefault())
+                .header("appsecret", kisProperties.getFinancialAppSecretOrDefault())
+                .header("tr_id", CURRENT_PRICE_TR_ID)
+                .header("custtype", "P")
+                .GET()
+                .build();
 
-      HttpResponse<String> response =
-          httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-      if (response.statusCode() < 200 || response.statusCode() >= 300) {
-        log.warn(
-            "code={}, message={}, status={}",
-            StockErrorCode.KIS_STOCK_PRICE_API_FAILED.getCode(),
-            StockErrorCode.KIS_STOCK_PRICE_API_FAILED.getMessage(),
-            response.statusCode());
-        throw new StockException(StockErrorCode.KIS_STOCK_PRICE_API_FAILED);
+        HttpResponse<String> response =
+            httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+          if (isExpiredToken(response.body()) && attempt == 0) {
+            invalidateFinancialAccessToken();
+            continue;
+          }
+          log.warn(
+              "code={}, message={}, status={}, kisError={}",
+              StockErrorCode.KIS_STOCK_PRICE_API_FAILED.getCode(),
+              StockErrorCode.KIS_STOCK_PRICE_API_FAILED.getMessage(),
+              response.statusCode(),
+              kisErrorSummary(response.body()));
+          throw new StockException(StockErrorCode.KIS_STOCK_PRICE_API_FAILED);
+        }
+
+        JsonNode root = objectMapper.readTree(response.body());
+        if (!"0".equals(root.path("rt_cd").asText())) {
+          if (isExpiredToken(root) && attempt == 0) {
+            invalidateFinancialAccessToken();
+            continue;
+          }
+          log.warn(
+              "code={}, message={}, msg_cd={}, msg={}",
+              StockErrorCode.KIS_STOCK_PRICE_API_FAILED.getCode(),
+              StockErrorCode.KIS_STOCK_PRICE_API_FAILED.getMessage(),
+              root.path("msg_cd").asText(),
+              root.path("msg1").asText());
+          throw new StockException(StockErrorCode.KIS_STOCK_PRICE_API_FAILED);
+        }
+
+        return root.path("output");
       }
-
-      JsonNode root = objectMapper.readTree(response.body());
-      if (!"0".equals(root.path("rt_cd").asText())) {
-        log.warn(
-            "code={}, message={}, msg_cd={}, msg={}",
-            StockErrorCode.KIS_STOCK_PRICE_API_FAILED.getCode(),
-            StockErrorCode.KIS_STOCK_PRICE_API_FAILED.getMessage(),
-            root.path("msg_cd").asText(),
-            root.path("msg1").asText());
-        throw new StockException(StockErrorCode.KIS_STOCK_PRICE_API_FAILED);
-      }
-
-      return root.path("output");
     } catch (IOException e) {
       throw new StockException(StockErrorCode.KIS_STOCK_PRICE_API_FAILED, e);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new StockException(StockErrorCode.KIS_STOCK_PRICE_API_FAILED, e);
     }
+    throw new StockException(StockErrorCode.KIS_STOCK_PRICE_API_FAILED);
   }
 
   private URI currentPriceUri(String ticker) {
@@ -126,10 +144,48 @@ public class KisStockPriceClient {
     params.put("FID_COND_MRKT_DIV_CODE", KRX_MARKET_DIV_CODE);
     params.put("FID_INPUT_ISCD", ticker);
 
-    String baseUrl = kisProperties.getBaseUrl();
+    String baseUrl = kisProperties.getFinancialBaseUrlOrDefault();
     String normalizedBaseUrl =
         baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     return URI.create(normalizedBaseUrl + CURRENT_PRICE_PATH + "?" + queryString(params));
+  }
+
+  private String kisErrorSummary(String body) {
+    if (body == null || body.isBlank()) {
+      return "empty";
+    }
+    try {
+      JsonNode root = objectMapper.readTree(body);
+      String msgCd = root.path("msg_cd").asText("");
+      String msg = root.path("msg1").asText("");
+      if (!msgCd.isBlank() || !msg.isBlank()) {
+        return "msg_cd=" + msgCd + ", msg1=" + msg;
+      }
+    } catch (IOException ignored) {
+      // Fall through to a compact body preview for non-JSON KIS errors.
+    }
+    String compact = body.replaceAll("\\s+", " ").trim();
+    return compact.length() > 180 ? compact.substring(0, 180) + "..." : compact;
+  }
+
+  private void invalidateFinancialAccessToken() {
+    accessTokenClient.invalidateAccessToken(
+        kisProperties.getFinancialAppKeyOrDefault(), kisProperties.getFinancialBaseUrlOrDefault());
+  }
+
+  private boolean isExpiredToken(String body) {
+    if (body == null || body.isBlank()) {
+      return false;
+    }
+    try {
+      return isExpiredToken(objectMapper.readTree(body));
+    } catch (IOException ignored) {
+      return false;
+    }
+  }
+
+  private boolean isExpiredToken(JsonNode root) {
+    return "EGW00123".equals(root.path("msg_cd").asText());
   }
 
   private String queryString(Map<String, String> params) {

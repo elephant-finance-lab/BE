@@ -75,7 +75,8 @@ public class KisStockChartClient {
     this.kisProperties = kisProperties;
     this.accessTokenClient = accessTokenClient;
     this.objectMapper = objectMapper;
-    this.webClient = builder.baseUrl(normalizedBaseUrl(kisProperties.getBaseUrl())).build();
+    this.webClient =
+        builder.baseUrl(normalizedBaseUrl(kisProperties.getFinancialBaseUrlOrDefault())).build();
   }
 
   public List<StockChartResDTO.DataPoint> fetchChart(String ticker, StockChartRange range) {
@@ -236,9 +237,13 @@ public class KisStockChartClient {
   private void applyKisHeaders(HttpHeaders headers, String trId) {
     headers.setContentType(
         MediaType.parseMediaType(MediaType.APPLICATION_JSON_VALUE + "; charset=utf-8"));
-    headers.setBearerAuth(accessTokenClient.getAccessToken());
-    headers.set("appkey", kisProperties.getAppKey());
-    headers.set("appsecret", kisProperties.getAppSecret());
+    headers.setBearerAuth(
+        accessTokenClient.getAccessToken(
+            kisProperties.getFinancialAppKeyOrDefault(),
+            kisProperties.getFinancialAppSecretOrDefault(),
+            kisProperties.getFinancialBaseUrlOrDefault()));
+    headers.set("appkey", kisProperties.getFinancialAppKeyOrDefault());
+    headers.set("appsecret", kisProperties.getFinancialAppSecretOrDefault());
     headers.set("tr_id", trId);
     headers.set("custtype", "P");
   }

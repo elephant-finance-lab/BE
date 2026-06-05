@@ -38,6 +38,19 @@ class KisPropertiesTest {
   }
 
   @Test
+  void allowsRealFinancialEndpointInVirtualModeForPaperPortfolioAndMarketDataSplit() {
+    KisProperties properties = new KisProperties();
+    properties.setMode(Mode.VIRTUAL);
+    properties.setFinancialBaseUrl("https://openapi.koreainvestment.com:9443");
+
+    properties.validateOfficialEndpointMatchesMode();
+
+    assertThat(properties.getBaseUrl()).isEqualTo("https://openapivts.koreainvestment.com:29443");
+    assertThat(properties.getFinancialBaseUrlOrDefault())
+        .isEqualTo("https://openapi.koreainvestment.com:9443");
+  }
+
+  @Test
   void rejectsAnExplicitRealRestEndpointInVirtualMode() {
     KisProperties properties = new KisProperties();
     properties.setMode(Mode.VIRTUAL);
@@ -49,12 +62,13 @@ class KisPropertiesTest {
   }
 
   @Test
-  void rejectsAnExplicitVirtualFinancialEndpointInRealMode() {
+  void allowsVirtualFinancialEndpointInRealModeForExplicitLocalOverrides() {
     KisProperties properties = new KisProperties();
     properties.setFinancialBaseUrl("https://openapivts.koreainvestment.com:29443");
 
-    assertThatThrownBy(properties::validateOfficialEndpointMatchesMode)
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("kis.financial-base-url does not match kis.mode=real");
+    properties.validateOfficialEndpointMatchesMode();
+
+    assertThat(properties.getFinancialBaseUrlOrDefault())
+        .isEqualTo("https://openapivts.koreainvestment.com:29443");
   }
 }

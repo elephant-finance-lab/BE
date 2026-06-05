@@ -81,6 +81,20 @@ public class KisAccessTokenClient {
     return waitForIssuedToken(tokenRedisKey);
   }
 
+  public void invalidateAccessToken() {
+    invalidateAccessToken(kisProperties.getAppKey(), kisProperties.getBaseUrl());
+  }
+
+  public void invalidateAccessToken(String appKey, String baseUrl) {
+    String tokenRedisKey = tokenRedisKey(appKey, baseUrl);
+    stringRedisTemplate.delete(tokenRedisKey);
+    stringRedisTemplate.delete(tokenLockRedisKey(tokenRedisKey));
+    log.info(
+        "한국투자증권 접근 토큰 캐시 무효화. baseUrl={}, appKey={}",
+        normalizedBaseUrl(baseUrl),
+        maskedAppKey(appKey));
+  }
+
   private String issueAccessToken(
       String tokenRedisKey, String appKey, String appSecret, String baseUrl) {
     try {
