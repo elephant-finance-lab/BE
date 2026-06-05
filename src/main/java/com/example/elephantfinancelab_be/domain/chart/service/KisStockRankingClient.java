@@ -45,9 +45,15 @@ public class KisStockRankingClient {
               .uri(rankingUri(type))
               .timeout(REQUEST_TIMEOUT)
               .header("content-type", MediaType.APPLICATION_JSON_VALUE + "; charset=utf-8")
-              .header("authorization", "Bearer " + accessTokenClient.getAccessToken())
-              .header("appkey", kisProperties.getAppKey())
-              .header("appsecret", kisProperties.getAppSecret())
+              .header(
+                  "authorization",
+                  "Bearer "
+                      + accessTokenClient.getAccessToken(
+                          kisProperties.getFinancialAppKeyOrDefault(),
+                          kisProperties.getFinancialAppSecretOrDefault(),
+                          kisProperties.getFinancialBaseUrlOrDefault()))
+              .header("appkey", kisProperties.getFinancialAppKeyOrDefault())
+              .header("appsecret", kisProperties.getFinancialAppSecretOrDefault())
               .header("tr_id", type.getTrId())
               .header("custtype", "P")
               .GET()
@@ -109,7 +115,7 @@ public class KisStockRankingClient {
   }
 
   private URI rankingUri(RankingType type) {
-    String baseUrl = kisProperties.getBaseUrl();
+    String baseUrl = kisProperties.getFinancialBaseUrlOrDefault();
     String normalizedBaseUrl =
         baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     return URI.create(

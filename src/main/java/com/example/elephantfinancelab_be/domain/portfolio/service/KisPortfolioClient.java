@@ -50,6 +50,7 @@ public class KisPortfolioClient {
   private static final String INITIAL_TR_CONT = "";
   private static final String NEXT_TR_CONT = "N";
   private static final int MAX_CONTINUOUS_REQUESTS = 10;
+  private static final int MAX_FETCH_ATTEMPTS = 3;
   private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
   private static final DateTimeFormatter KIS_DATE_FORMATTER = DateTimeFormatter.BASIC_ISO_DATE;
   private static final DateTimeFormatter KIS_TIME_FORMATTER = DateTimeFormatter.ofPattern("HHmmss");
@@ -129,56 +130,76 @@ public class KisPortfolioClient {
   private KisResponse fetch(
       String path, String trId, Map<String, String> params, String trCont, String apiName) {
     try {
-      HttpRequest.Builder builder =
-          HttpRequest.newBuilder()
-              .uri(uri(path, params))
-              .timeout(REQUEST_TIMEOUT)
-              .header("content-type", MediaType.APPLICATION_JSON_VALUE + "; charset=utf-8")
-              .header("authorization", "Bearer " + accessTokenClient.getAccessToken())
-              .header("appkey", kisProperties.getAppKey())
-              .header("appsecret", kisProperties.getAppSecret())
-              .header("tr_id", trId)
-              .header("custtype", "P")
-              .GET();
-      if (hasText(trCont)) {
-        builder.header("tr_cont", trCont);
-      }
+      for (int attempt = 0; attempt < MAX_FETCH_ATTEMPTS; attempt++) {
+        HttpRequest.Builder builder =
+            HttpRequest.newBuilder()
+                .uri(uri(path, params))
+                .timeout(REQUEST_TIMEOUT)
+                .header("content-type", MediaType.APPLICATION_JSON_VALUE + "; charset=utf-8")
+                .header("authorization", "Bearer " + accessTokenClient.getAccessToken())
+                .header("appkey", kisProperties.getAppKey())
+                .header("appsecret", kisProperties.getAppSecret())
+                .header("tr_id", trId)
+                .header("custtype", "P")
+                .GET();
+        if (hasText(trCont)) {
+          builder.header("tr_cont", trCont);
+        }
 
-      HttpResponse<String> response =
-          httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
-      if (response.statusCode() < 200 || response.statusCode() >= 300) {
-        log.warn(
-            "code={}, message={}, api={}, trId={}, status={}, account={}",
-            PortfolioErrorCode.KIS_PORTFOLIO_API_FAILED.getCode(),
-            PortfolioErrorCode.KIS_PORTFOLIO_API_FAILED.getMessage(),
-            apiName,
-            trId,
-            response.statusCode(),
-            kisProperties.maskedAccount());
-        throw new PortfolioException(PortfolioErrorCode.KIS_PORTFOLIO_API_FAILED);
-      }
+        HttpResponse<String> response =
+            httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+          if (isExpiredToken(response.body()) && attempt == 0) {
+            accessTokenClient.invalidateAccessToken();
+            continue;
+          }
+          if (isRateLimited(response.body()) && attempt < MAX_FETCH_ATTEMPTS - 1) {
+            sleepBeforeRetry(attempt);
+            continue;
+          }
+          log.warn(
+              "code={}, message={}, api={}, trId={}, status={}, account={}, kisError={}",
+              PortfolioErrorCode.KIS_PORTFOLIO_API_FAILED.getCode(),
+              PortfolioErrorCode.KIS_PORTFOLIO_API_FAILED.getMessage(),
+              apiName,
+              trId,
+              response.statusCode(),
+              kisProperties.maskedAccount(),
+              kisErrorSummary(response.body()));
+          throw new PortfolioException(PortfolioErrorCode.KIS_PORTFOLIO_API_FAILED);
+        }
 
-      JsonNode root = readTree(response.body(), apiName);
-      if (!"0".equals(root.path("rt_cd").asText())) {
-        log.warn(
-            "code={}, message={}, api={}, trId={}, msgCd={}, msg={}, account={}",
-            PortfolioErrorCode.KIS_PORTFOLIO_API_FAILED.getCode(),
-            PortfolioErrorCode.KIS_PORTFOLIO_API_FAILED.getMessage(),
-            apiName,
-            trId,
-            root.path("msg_cd").asText(),
-            root.path("msg1").asText(),
-            kisProperties.maskedAccount());
-        throw new PortfolioException(PortfolioErrorCode.KIS_PORTFOLIO_API_FAILED);
-      }
+        JsonNode root = readTree(response.body(), apiName);
+        if (!"0".equals(root.path("rt_cd").asText())) {
+          if (isExpiredToken(root) && attempt == 0) {
+            accessTokenClient.invalidateAccessToken();
+            continue;
+          }
+          if (isRateLimited(root) && attempt < MAX_FETCH_ATTEMPTS - 1) {
+            sleepBeforeRetry(attempt);
+            continue;
+          }
+          log.warn(
+              "code={}, message={}, api={}, trId={}, msgCd={}, msg={}, account={}",
+              PortfolioErrorCode.KIS_PORTFOLIO_API_FAILED.getCode(),
+              PortfolioErrorCode.KIS_PORTFOLIO_API_FAILED.getMessage(),
+              apiName,
+              trId,
+              root.path("msg_cd").asText(),
+              root.path("msg1").asText(),
+              kisProperties.maskedAccount());
+          throw new PortfolioException(PortfolioErrorCode.KIS_PORTFOLIO_API_FAILED);
+        }
 
-      return new KisResponse(root, response.headers().firstValue("tr_cont").orElse(""));
+        return new KisResponse(root, response.headers().firstValue("tr_cont").orElse(""));
+      }
     } catch (IOException e) {
       throw new PortfolioException(PortfolioErrorCode.KIS_PORTFOLIO_API_FAILED, e);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new PortfolioException(PortfolioErrorCode.KIS_PORTFOLIO_API_FAILED, e);
     }
+    throw new PortfolioException(PortfolioErrorCode.KIS_PORTFOLIO_API_FAILED);
   }
 
   private JsonNode readTree(String body, String apiName) {
@@ -193,6 +214,58 @@ public class KisPortfolioClient {
           kisProperties.maskedAccount());
       throw new PortfolioException(PortfolioErrorCode.KIS_PORTFOLIO_RESPONSE_PARSE_FAILED, e);
     }
+  }
+
+  private String kisErrorSummary(String body) {
+    if (body == null || body.isBlank()) {
+      return "empty";
+    }
+    try {
+      JsonNode root = objectMapper.readTree(body);
+      String msgCd = root.path("msg_cd").asText("");
+      String msg = root.path("msg1").asText("");
+      if (!msgCd.isBlank() || !msg.isBlank()) {
+        return "msg_cd=" + msgCd + ", msg1=" + msg;
+      }
+    } catch (IOException ignored) {
+      // Fall through to a compact body preview for non-JSON KIS errors.
+    }
+    String compact = body.replaceAll("\\s+", " ").trim();
+    return compact.length() > 180 ? compact.substring(0, 180) + "..." : compact;
+  }
+
+  private boolean isExpiredToken(String body) {
+    if (body == null || body.isBlank()) {
+      return false;
+    }
+    try {
+      return isExpiredToken(objectMapper.readTree(body));
+    } catch (IOException ignored) {
+      return false;
+    }
+  }
+
+  private boolean isExpiredToken(JsonNode root) {
+    return "EGW00123".equals(root.path("msg_cd").asText());
+  }
+
+  private boolean isRateLimited(String body) {
+    if (body == null || body.isBlank()) {
+      return false;
+    }
+    try {
+      return isRateLimited(objectMapper.readTree(body));
+    } catch (IOException ignored) {
+      return false;
+    }
+  }
+
+  private boolean isRateLimited(JsonNode root) {
+    return "EGW00201".equals(root.path("msg_cd").asText());
+  }
+
+  private void sleepBeforeRetry(int attempt) throws InterruptedException {
+    Thread.sleep(500L * (attempt + 1));
   }
 
   private Account resolveAccount() {
