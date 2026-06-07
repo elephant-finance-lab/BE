@@ -13,8 +13,7 @@ import com.example.elephantfinancelab_be.domain.autotrading.exception.AutoTradin
 import com.example.elephantfinancelab_be.domain.autotrading.exception.code.AutoTradingErrorCode;
 import com.example.elephantfinancelab_be.domain.autotrading.repository.AutoTradingSessionRepository;
 import com.example.elephantfinancelab_be.domain.recommendation.entity.Recommendation;
-import com.example.elephantfinancelab_be.domain.recommendation.entity.UserSelectedRecommendation;
-import com.example.elephantfinancelab_be.domain.recommendation.repository.UserSelectedRecommendationRepository;
+import com.example.elephantfinancelab_be.domain.recommendation.repository.RecommendationRepository;
 import com.example.elephantfinancelab_be.global.apiPayload.code.AiServerErrorCode;
 import com.example.elephantfinancelab_be.global.apiPayload.exception.AiServerException;
 import com.example.elephantfinancelab_be.global.apiPayload.util.AiDetailSanitizer;
@@ -24,9 +23,11 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -42,7 +43,7 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
   private static final int MIN_PAPER_INTERVAL_SEC = 60;
 
   private final AutoTradingSessionRepository autoTradingSessionRepository;
-  private final UserSelectedRecommendationRepository userSelectedRecommendationRepository;
+  private final RecommendationRepository recommendationRepository;
   private final AiServerClient aiServerClient;
 
   @Value("${ai.paper-auto.bundle-id:}")
@@ -69,10 +70,14 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     validatePurchaseOption(request.getPurchaseOptionId());
     validateNonNegative(request.getCycles(), "cycles");
     validateMinIntervalSec(request.getIntervalSec());
-    List<Long> recommendationIds = request.getRecommendationIds().stream().distinct().toList();
+    List<Long> requestedRecommendationIds =
+        normalizeRecommendationIds(request.getRecommendationIds());
     String requestedBundleId = normalizeBundleId(request.getBundleId());
     String resolvedBundleId = resolveBundleId(requestedBundleId);
-    List<String> tickers = findSelectedTickers(userId, recommendationIds, resolvedBundleId);
+    List<Recommendation> recommendations =
+        findTradingRecommendations(requestedRecommendationIds, resolvedBundleId);
+    List<Long> recommendationIds = recommendations.stream().map(Recommendation::getId).toList();
+    List<String> tickers = findRecommendationTickers(recommendations, resolvedBundleId);
     return startResolvedSession(
         userId,
         idempotencyKey,
@@ -320,47 +325,94 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
     return AutoTradingConverter.toSession(autoTradingSessionRepository.saveAndFlush(session));
   }
 
-  private List<String> findSelectedTickers(
-      Long userId, List<Long> recommendationIds, String requestedBundleId) {
-    if (recommendationIds.isEmpty()) {
+  private static List<Long> normalizeRecommendationIds(List<Long> recommendationIds) {
+    if (recommendationIds == null || recommendationIds.isEmpty()) {
+      return List.of();
+    }
+    if (recommendationIds.stream().anyMatch(Objects::isNull)) {
       throw new AutoTradingException(AutoTradingErrorCode.INVALID_RECOMMENDATIONS);
     }
-    List<UserSelectedRecommendation> selected =
-        userSelectedRecommendationRepository.findAllByUserIdAndRecommendation_IdIn(
-            userId, recommendationIds);
+    return recommendationIds.stream().distinct().toList();
+  }
+
+  private List<Recommendation> findTradingRecommendations(
+      List<Long> recommendationIds, String requestedBundleId) {
+    if (recommendationIds.isEmpty()) {
+      return findLatestRecommendationBatch(requestedBundleId);
+    }
+
+    List<Recommendation> recommendations = recommendationRepository.findAllById(recommendationIds);
+    if (recommendations == null) {
+      recommendations = List.of();
+    }
     Map<Long, Recommendation> recommendationById = new LinkedHashMap<>();
-    Map<Long, String> tickerByRecommendationId = new LinkedHashMap<>();
-    Map<Long, String> bundleByRecommendationId = new LinkedHashMap<>();
-    for (UserSelectedRecommendation item : selected) {
-      Recommendation recommendation = item.getRecommendation();
+    for (Recommendation recommendation : recommendations) {
       if (recommendation == null || recommendation.getId() == null) {
         continue;
       }
       recommendationById.putIfAbsent(recommendation.getId(), recommendation);
-      tickerByRecommendationId.putIfAbsent(recommendation.getId(), recommendation.getTickerCode());
-      bundleByRecommendationId.putIfAbsent(
-          recommendation.getId(), recommendation.getModelBundleId());
     }
-    if (!tickerByRecommendationId.keySet().containsAll(recommendationIds)) {
+    if (!recommendationById.keySet().containsAll(recommendationIds)) {
       throw new AutoTradingException(AutoTradingErrorCode.INVALID_RECOMMENDATIONS);
     }
-    if (recommendationIds.stream()
-        .map(tickerByRecommendationId::get)
+    return recommendationIds.stream().map(recommendationById::get).toList();
+  }
+
+  private List<Recommendation> findLatestRecommendationBatch(String requestedBundleId) {
+    Recommendation latest = findLatestCachedRecommendation(requestedBundleId);
+    List<Recommendation> recommendations =
+        recommendationRepository.findByModelGeneratedAtAndModelBundleIdOrderByRankingAsc(
+            latest.getModelGeneratedAt(), latest.getModelBundleId());
+    if (recommendations == null || recommendations.isEmpty()) {
+      throw new AutoTradingException(AutoTradingErrorCode.INVALID_RECOMMENDATIONS);
+    }
+    return recommendations;
+  }
+
+  private Recommendation findLatestCachedRecommendation(String requestedBundleId) {
+    List<Recommendation> recommendations =
+        recommendationRepository.findByModelGeneratedAtIsNotNull();
+    if (recommendations == null) {
+      recommendations = List.of();
+    }
+    return recommendations.stream()
+        .filter(recommendation -> recommendation.getId() != null)
+        .filter(recommendation -> recommendation.getModelGeneratedAt() != null)
+        .filter(
+            recommendation ->
+                !hasText(requestedBundleId)
+                    || sameBundle(requestedBundleId, recommendation.getModelBundleId()))
+        .sorted(
+            Comparator.comparing(
+                    (Recommendation recommendation) ->
+                        recommendation.getModelGeneratedAt().toInstant())
+                .reversed()
+                .thenComparing(
+                    Recommendation::getRanking, Comparator.nullsLast(Comparator.naturalOrder())))
+        .findFirst()
+        .orElseThrow(() -> new AutoTradingException(AutoTradingErrorCode.INVALID_RECOMMENDATIONS));
+  }
+
+  private List<String> findRecommendationTickers(
+      List<Recommendation> recommendations, String requestedBundleId) {
+    if (recommendations.isEmpty()) {
+      throw new AutoTradingException(AutoTradingErrorCode.INVALID_RECOMMENDATIONS);
+    }
+    if (recommendations.stream()
+        .map(Recommendation::getTickerCode)
         .anyMatch(ticker -> ticker == null || ticker.isBlank())) {
       throw new AutoTradingException(AutoTradingErrorCode.SELECTED_TICKERS_EMPTY);
     }
-    if (requestedBundleId != null
-        && !requestedBundleId.isBlank()
-        && recommendationIds.stream()
-            .map(bundleByRecommendationId::get)
-            .anyMatch(bundle -> bundle == null || !requestedBundleId.equals(bundle.trim()))) {
+    if (hasText(requestedBundleId)
+        && recommendations.stream()
+            .map(Recommendation::getModelBundleId)
+            .anyMatch(bundle -> !sameBundle(requestedBundleId, bundle))) {
       throw new AutoTradingException(
           AutoTradingErrorCode.READINESS_GATE_BLOCKED, "recommendation_bundle_mismatch");
     }
-    recommendationIds.forEach(
-        id -> validateSelectedRecommendationFreshness(recommendationById.get(id)));
-    return recommendationIds.stream()
-        .map(tickerByRecommendationId::get)
+    recommendations.forEach(this::validateSelectedRecommendationFreshness);
+    return recommendations.stream()
+        .map(Recommendation::getTickerCode)
         .map(String::trim)
         .distinct()
         .toList();
@@ -493,6 +545,12 @@ public class AutoTradingCommandServiceImpl implements AutoTradingCommandService 
 
   private static boolean hasText(String value) {
     return value != null && !value.isBlank();
+  }
+
+  private static boolean sameBundle(String expectedBundleId, String actualBundleId) {
+    return hasText(expectedBundleId)
+        && actualBundleId != null
+        && expectedBundleId.equals(actualBundleId.trim());
   }
 
   private static LocalDateTime parseDateTime(String raw) {
